@@ -97,15 +97,44 @@ Most of the relevant works were focusing on collocating a throughput oriented jo
 - Current Max PCIe bandwidth for pinned memory is 22-23GB/s and for pageable it is 10-15GB/sec
 
 
-* Observations:
-```
-Model 1,Model 2,Batch size,n_steps,total_time,parallel,p1_time,p2_time
-llm_text_classification,resnet_image_classification,32,1200,264.47155609900074,False,159.14142829799675,105.33012053900165
-llm_text_classification,resnet_image_classification,32,1200,258.2299121209944,True,258.2299121209944,178.14932296200277
-```
-- When offloading preprocessing to a separate worker, parallel and sequential execution of resnet and bert yield similar performance. However, inspecting the pcie connection reveals the presence of a contention that was not severe enough to slowdown resnet.
+
+
+# Realizations:
+1- Contention is not only coming from pcie, but also from the cpu
+
+# Testbed:
 
 
 
+# Testbed Notes:
+- For computer vision models (bs=32, num-workers=1, cpu=4, ram=4Gi, gpu=2g.12gb), no contention is observed when running with number of workers of dataloader is set to 1. This confirms that the previously observed contention is not caused by PCIe, but probably by CPU processing given that the ram usage for both were relatively low.
+- 
 
 
+# Kubernetes Resource limitation notes:
+- Kubeflow failed with mix gpu provisioning
+- CPU limitation only limits the time the pod uses the cpu; it does isolate the cores.
+
+
+# Homogeneous Training Targeted Workload:
+| Workload  | MiG Config | Contention Y/N | Note |
+| ------------- | ------------- | ------------- | ------------- |
+| EleutherAI/pythia-1b  | 1g.6gb  | Y | |
+| Qwen/Qwen2.5-0.5B  | 1g.6gb  | Y | Not PCIe contention (Max bound is not hit)|
+| EleutherAI/pythia-160m  | 1g.6gb  | Y | Not PCIe (Max bound is not hit) and only if param offload is enabled  |
+| Qwen/Qwen2.5-3B | 1g.6gb | Y | |
+# Heterogeneous Training Targeted Workload:
+| Workload 1 | MiG Config | Contention Y/N | Note |
+| ------------- | ------------- | ------------- | ------------- |
+| EleutherAI/pythia-1b  | 1g.6gb  | Y |
+| Qwen/Qwen2.5-0.5B  | 1g.6gb  | Y | Not PCIe contention (Max bound is not hit)|
+| EleutherAI/pythia-160m  | 1g.6gb  | Y | Not PCIe (Max bound is not hit) and only if param offload is enabled  |
+
+# GPU Conf:
+- 1g.6gb
+# Benchmarking Cases:
+- Case 1: No sharing, each job is assigned to 1g.6gb
+- Case 2: Rounds of combinations
+
+# Collected Metrics:
+exi

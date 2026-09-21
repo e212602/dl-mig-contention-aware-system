@@ -1,0 +1,9 @@
+dcgmExporter:
+  env: 
+    - name: DCGM_EXPORTER_DEVICES_STR
+      value: g
+    - name: DCGM_EXPORTER_INTERVAL
+      value: "5000"
+  serviceMonitor:
+    interval: 5s
+    scrapeTimeout: 8s

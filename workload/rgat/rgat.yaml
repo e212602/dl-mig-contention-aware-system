@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rgat
+spec:
+  template:
+    spec:
+      containers:
+        - name: rgat
+          image: e8113/training_gnn:latest@sha256:264d7300e089cb879c64d3e2d01ea0d87953f5a197b876c523d269a8a889366f
+          imagePullPolicy: Never
+          command:
+            - /bin/bash
+            - -c
+            - |
+              #!/bin/bash
+              pip uninstall -y numpy
+              pip install "numpy<2"
+              python3 train_rgnn_multi_gpu.py --model='rsage' --dataset_size='tiny' --layout='CSC' --path=/tmp --train_batch_size 32
+          #args: ["-c", "sleep infinity"]
+          stdin: true
+          tty: true
+          volumeMounts:
+          - mountPath: /tmp
+            name: example-volume
+            readOnly: false
+          - mountPath: /dev/shm
+            name: dshm
+          resources:
+            limits:
+              cpu: "20"
+              memory: "8Gi"
+              nvidia.com/gpu: 1
+      restartPolicy: Never
+      volumes:
+        - name: example-volume
+          hostPath:
+            path: /mnt/datasets
+            type: Directory
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: "16Gi"
+  parallelism: 1
+  backoffLimit: 0 # Stops retrying after 1 failure
