@@ -31,6 +31,12 @@
           - pcie_workers | map(attribute='worker_number') | unique | length == 2
         fail_msg: "Set SERVER_ID and configure two workers with unique worker numbers."
 
+    - name: Publish experiment settings for the server play
+      ansible.builtin.set_fact:
+        pcie_experiment_server_host: "{{ server_host }}"
+        pcie_experiment_workers: "{{ pcie_workers }}"
+        pcie_experiment_gb_rates: "{{ gb_rate_values }}"
+
     - name: Capture run timestamp
       ansible.builtin.set_fact:
         timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
@@ -71,7 +77,7 @@
             gb_rate: "{{ gb_rate_values }}"
 
 - name: Run PCIe worker comparison on the server
-  hosts: "{{ hostvars['localhost']['server_host'] }}"
+  hosts: "{{ hostvars['localhost']['pcie_experiment_server_host'] }}"
   gather_facts: false
   vars:
     k8s_namespace: default
@@ -80,8 +86,8 @@
     controller_template_file: "{{ playbook_dir }}/manifests/controller_template.yaml"
     ops_template_file: "{{ playbook_dir }}/manifests/pice_stress_template.yaml"
     local_run_dir: "{{ hostvars['localhost']['run_dir'] }}"
-    pcie_workers: "{{ hostvars['localhost']['pcie_workers'] }}"
-    gb_rate_values: "{{ hostvars['localhost']['gb_rate_values'] }}"
+    pcie_workers: "{{ hostvars['localhost']['pcie_experiment_workers'] }}"
+    gb_rate_values: "{{ hostvars['localhost']['pcie_experiment_gb_rates'] }}"
 
   tasks:
     - name: Run each GB_RATE with a clean server state
