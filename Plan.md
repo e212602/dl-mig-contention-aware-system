@@ -104,7 +104,9 @@ Most of the relevant works were focusing on collocating a throughput oriented jo
 
 # Testbed:
 
-
+# Approach:
+1- Study how the performance of a model changes based on available throughput (i.e. Throughput = f(bw)):
+    - Study if the pcie bandwidth division is fixed or dynamic (i.e. let's say there are 4 jobs with the demands 1GB/s,3GB/s, 6GB/s, and 12GB/s, does each each get a uniform 6GB/s or different bandwidth depending on demands).
 
 # Testbed Notes:
 - For computer vision models (bs=32, num-workers=1, cpu=4, ram=4Gi, gpu=2g.12gb), no contention is observed when running with number of workers of dataloader is set to 1. This confirms that the previously observed contention is not caused by PCIe, but probably by CPU processing given that the ram usage for both were relatively low.

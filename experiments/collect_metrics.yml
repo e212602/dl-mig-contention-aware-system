@@ -1,0 +1,106 @@
+---
+# Included at the end of the benchmark block in the client play.
+# 1. Client : compute the time window of every (phase, model, rate, count) run
+#             from its aiperf raw JSONL.
+# 2. Server : open a kubectl port-forward to Prometheus (localhost only) and run
+#             the scrapper once per window. Both live on the server, so no
+#             tunnel back to the controller is needed.
+# The port-forward, tarball and fetch are handled in the play's `always` section.
+
+- name: Copy time-boundary script to the client
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/utils/get_time_boundaries.py"
+    dest: "{{ client_run_dir }}/get_time_boundaries.py"
+    mode: '0755'
+
+- name: Compute the time window of every benchmark run
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_python_interpreter }}"
+      - "{{ client_run_dir }}/get_time_boundaries.py"
+      - --file
+      - "{{ client_run_dir }}/artifacts/{{ item[0] }}/{{ item[1] | replace('/', '_') }}_rps{{ item[2] }}_n{{ item[3] }}/{{ item[0] }}_raw.jsonl"
+      - --pad-seconds
+      - "{{ metrics_pad_seconds }}"
+  loop: "{{ benchmark_phases | product(models_list, request_rate, request_count) | list }}"
+  loop_control:
+    label: "{{ item[0] }} / {{ item[1] }}"
+  register: time_windows
+  changed_when: false
+
+- name: Save time windows to the controller
+  ansible.builtin.copy:
+    dest: "{{ hostvars['localhost']['run_dir'] }}/time_windows.json"
+    content: "{{ time_windows.results | map(attribute='stdout') | map('from_json') | list | to_nice_json }}"
+    mode: '0644'
+  delegate_to: localhost
+
+- name: Let Prometheus ingest the final samples
+  ansible.builtin.pause:
+    seconds: "{{ prometheus_settle_seconds }}"
+
+- name: Create metrics directory on the server
+  ansible.builtin.file:
+    path: "{{ metrics_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: "{{ server_host }}"
+
+- name: Copy scrapper binary to the server
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/bin/scrapper"
+    dest: "{{ metrics_dir }}/scrapper"
+    mode: '0755'
+  delegate_to: "{{ server_host }}"
+
+- name: Start Prometheus port-forward on the server (background)
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - port-forward
+      - --namespace
+      - "{{ prometheus_namespace }}"
+      - "svc/{{ prometheus_service }}"
+      - --address
+      - 127.0.0.1
+      - "{{ prometheus_local_port }}:{{ prometheus_service_port }}"
+  async: 3600
+  poll: 0
+  delegate_to: "{{ server_host }}"
+
+- name: Wait until Prometheus answers through the port-forward
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_local_port }}/-/ready"
+    status_code: 200
+    timeout: 3
+  register: prom_ready
+  until: prom_ready.status is defined and prom_ready.status == 200
+  retries: 15
+  delay: 2
+  delegate_to: "{{ server_host }}"
+
+- name: Scrape Prometheus for every run window
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd {{ metrics_dir }}
+    ./scrapper \
+      --addr "http://127.0.0.1:{{ prometheus_local_port }}" \
+      --start "{{ window.start }}" \
+      --end "{{ window.end }}" \
+      --step "{{ metrics_step }}" \
+      --csv-file "{{ run_tag }}.csv" > "{{ run_tag }}.log" 2>&1
+    # The scrapper exits 0 even when individual queries fail, so check the log.
+    if grep -q 'ERROR:' "{{ run_tag }}.log"; then
+      echo "Prometheus queries failed for {{ run_tag }}, see {{ metrics_dir }}/{{ run_tag }}.log" >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  vars:
+    window: "{{ item.stdout | from_json }}"
+    run_tag: "{{ item.item[0] }}__{{ item.item[1] | replace('/', '_') }}_rps{{ item.item[2] }}_n{{ item.item[3] }}"
+  loop: "{{ time_windows.results }}"
+  loop_control:
+    label: "{{ item.item[0] }} / {{ item.item[1] }}"
+  delegate_to: "{{ server_host }}"
+  changed_when: true

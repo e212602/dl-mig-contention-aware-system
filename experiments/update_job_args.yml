@@ -1,0 +1,71 @@
+---
+# Included once per vLLM Job (loop var: job).
+# Sets --cpu-offload-gb to the per-model value when cpu_offload_enabled is true,
+# otherwise to cpu_offload_default. Recreates the Job only if the value differs.
+# Fails loudly instead of silently skipping a misconfigured Job.
+- name: "Reconcile --cpu-offload-gb for {{ job.metadata.name }}"
+  vars:
+    container: "{{ job.spec.template.spec.containers[0] }}"
+    model: "{{ container.env | default([]) | selectattr('name', 'eq', 'MODEL_NAME') | map(attribute='value') | first | default('') }}"
+    flag_idx: "{{ container.args.index('--cpu-offload-gb') }}"
+    target: "{{ cpu_offload_by_model[model] if cpu_offload_enabled | bool else cpu_offload_default }}"
+    current: "{{ container.args[flag_idx | int + 1] }}"
+    new_args: "{{ container.args[:flag_idx | int + 1] + [target | string] + container.args[flag_idx | int + 2:] }}"
+    template_labels: >-
+      {{ job.spec.template.metadata.labels | default({})
+         | dict2items
+         | rejectattr('key', 'in', ['controller-uid', 'batch.kubernetes.io/controller-uid'])
+         | items2dict }}
+    new_job_spec: >-
+      {{ job.spec
+         | dict2items
+         | rejectattr('key', 'in', ['selector', 'template'])
+         | items2dict
+         | combine({'template': {
+             'metadata': {'labels': template_labels},
+             'spec': job.spec.template.spec | combine({'containers': [container | combine({'args': new_args})]})
+           }}) }}
+  block:
+    - name: Check the Job is configured as expected
+      ansible.builtin.assert:
+        that:
+          - job.spec.template.spec.containers | length == 1
+          - container.args is defined
+          - "'--cpu-offload-gb' in container.args"
+          - flag_idx | int + 1 < container.args | length
+          - model in cpu_offload_by_model
+        fail_msg: >-
+          Job {{ job.metadata.name }}: needs exactly one container, a --cpu-offload-gb
+          arg with a value, and a MODEL_NAME listed in cpu_offload_by_model.
+
+    - name: "{{ job.metadata.name }}: current={{ current }} target={{ target }}"
+      ansible.builtin.debug:
+        msg: "{{ 'Recreating Job' if (current | float != target | float) else 'Already correct, leaving Job untouched' }}"
+
+    - name: Delete and recreate Job
+      when: current | float != target | float
+      block:
+        - name: Delete existing Job (and its pods)
+          kubernetes.core.k8s:
+            state: absent
+            api_version: batch/v1
+            kind: Job
+            name: "{{ job.metadata.name }}"
+            namespace: "{{ job.metadata.namespace }}"
+            wait: true
+            wait_timeout: 300
+            delete_options:
+              propagationPolicy: Foreground
+
+        - name: Recreate Job with updated args
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: "{{ job.metadata.name }}"
+                namespace: "{{ job.metadata.namespace }}"
+                labels: "{{ job.metadata.labels | default({}) }}"
+              spec: "{{ new_job_spec }}"
+            wait: false

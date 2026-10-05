@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: controller
+spec:
+  containers:
+    - name: ops
+      env:
+        - name: GB_RATE
+          value: {{ .Values.gb_rate | quote }}
+      image: e8113/controller:latest
+      imagePullPolicy: Never
+      resources:
+        limits:
+          cpu: '2'
+          memory: 2Gi
+      volumeMounts:
+        - mountPath: /tmp/rate-control
+          name: rate-control
+          readOnly: false
+  restartPolicy: Never
+  volumes:
+    - name: rate-control
+      hostPath:
+        path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control
+        type: DirectoryOrCreate

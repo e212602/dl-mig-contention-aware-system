@@ -1,0 +1,454 @@
+---
+# =============================================================================
+# vLLM RAM-bandwidth contention benchmark (1v1)
+#
+# Required env : SERVER_ID, CLIENT_ID  (inventory hosts)
+# Optional env : CPU_OFFLOAD_ENABLE=Yes|No   (unset == No)
+# Prerequisite : SSH tunnel on the client:  ssh -N -f -L 8080:localhost:80 ubuntu@SERVER_IP
+# Files        : vllm_vars.yaml, aiperf_vars.yaml, update_job_args.yml,
+#                manifests/ram_stress_pod.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Controller: validate inputs, create run identity and output directory
+# -----------------------------------------------------------------------------
+- name: Prepare run (controller)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vllm_vars.yaml
+    - aiperf_vars.yaml
+  vars:
+    experiment_name: ram_bandwidth_stress_1v1
+    output_base_dir: "{{ lookup('env', 'PWD') }}/results"
+    cpu_offload_env: "{{ lookup('env', 'CPU_OFFLOAD_ENABLE') | lower | trim }}"
+    server_goarch: amd64   # GOARCH of the server host (amd64 or arm64)
+
+  tasks:
+    - name: Validate environment and variable files
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'SERVER_ID') | length > 0
+          - lookup('env', 'CLIENT_ID') | length > 0
+          - cpu_offload_env in ['', 'yes', 'no']
+          - models_list | difference(cpu_offload_by_model.keys() | list) | length == 0
+          - models_list | difference(model_urls.keys() | list) | length == 0
+          - models_list | difference(model_urls_server.keys() | list) | length == 0
+        fail_msg: >-
+          Export SERVER_ID and CLIENT_ID, set CPU_OFFLOAD_ENABLE to Yes or No
+          (or leave it unset), and make sure every model in models_list has an
+          entry in cpu_offload_by_model, model_urls and model_urls_server.
+
+    - name: Resolve CPU offload switch
+      ansible.builtin.set_fact:
+        cpu_offload_enabled: "{{ cpu_offload_env == 'yes' }}"
+
+    - name: Capture timestamp
+      ansible.builtin.set_fact:
+        timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
+
+    - name: Set run identity
+      ansible.builtin.set_fact:
+        run_id: "{{ experiment_name }}_cpuoffload-{{ 'on' if cpu_offload_enabled | bool else 'off' }}_{{ timestamp }}"
+        run_dir: "{{ output_base_dir }}/{{ experiment_name }}_cpuoffload-{{ 'on' if cpu_offload_enabled | bool else 'off' }}_{{ timestamp }}"
+
+    - name: Create output directory
+      ansible.builtin.file:
+        path: "{{ run_dir }}"
+        state: directory
+        mode: '0755'
+
+    # Fail early if Go is missing, before any experiment time is spent.
+    - name: Build scrapper binary for the server
+      ansible.builtin.command: go build -o bin/scrapper utils/scrapper.go
+      args:
+        chdir: "{{ playbook_dir }}"
+      environment:
+        GOOS: linux
+        GOARCH: "{{ server_goarch }}"
+        CGO_ENABLED: "0"
+      changed_when: false
+
+    - name: Get git commit of this repository
+      ansible.builtin.command: git rev-parse HEAD
+      args:
+        chdir: "{{ playbook_dir }}"
+      register: git_commit
+      failed_when: false
+      changed_when: false
+
+    - name: Write run metadata
+      ansible.builtin.copy:
+        dest: "{{ run_dir }}/run_metadata.json"
+        content: "{{ run_metadata | to_nice_json }}"
+        mode: '0644'
+      vars:
+        run_metadata:
+          run_id: "{{ run_id }}"
+          timestamp: "{{ timestamp }}"
+          git_commit: "{{ git_commit.stdout | default('unknown') }}"
+          cpu_offload_enabled: "{{ cpu_offload_enabled | bool }}"
+          cpu_offload_by_model: "{{ cpu_offload_by_model }}"
+          models: "{{ models_list }}"
+          request_rate: "{{ request_rate }}"
+          request_count: "{{ request_count }}"
+
+
+# -----------------------------------------------------------------------------
+# 2. Server: clean state, apply CPU-offload config, wait for real readiness
+# -----------------------------------------------------------------------------
+- name: Prepare vLLM servers
+  hosts: "{{ lookup('env', 'SERVER_ID') }}"
+  gather_facts: false
+  vars_files:
+    - vllm_vars.yaml
+  vars:
+    k8s_namespace: default
+    stress_pod_name: ram-bandwidth-stress
+    cpu_offload_enabled: "{{ hostvars['localhost']['cpu_offload_enabled'] }}"
+    cpu_offload_default: "0.0"   # used when offloading is disabled
+
+  tasks:
+    # A stress pod left over from a failed run would contaminate the baseline.
+    - name: Remove leftover stress pod from any previous run
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        name: "{{ stress_pod_name }}"
+        namespace: "{{ k8s_namespace }}"
+        wait: true
+        wait_timeout: 120
+
+    - name: Fetch Jobs
+      kubernetes.core.k8s_info:
+        kind: Job
+        namespace: "{{ k8s_namespace }}"
+      register: k8s_jobs
+
+    - name: Every model must have a vLLM Job
+      ansible.builtin.assert:
+        that: models_list | difference(job_models) | length == 0
+        fail_msg: "No Job found with MODEL_NAME for: {{ models_list | difference(job_models) }}"
+      vars:
+        job_models: >-
+          {{ k8s_jobs.resources
+             | map(attribute='spec.template.spec.containers') | flatten
+             | map(attribute='env', default=[]) | flatten
+             | selectattr('name', 'eq', 'MODEL_NAME')
+             | map(attribute='value') | list }}
+
+    - name: Reconcile --cpu-offload-gb (delete & recreate Jobs whose value differs)
+      ansible.builtin.include_tasks: update_job_args.yml
+      loop: "{{ k8s_jobs.resources }}"
+      loop_control:
+        loop_var: job
+        label: "{{ job.metadata.name }}"
+      when: job.metadata.name is match('^vllm-server-')
+
+    # /v1/models proves the model is loaded and served under the expected name.
+    - name: Wait until every vLLM server serves its model
+      ansible.builtin.uri:
+        url: "{{ model_urls_server[item] }}/v1/models"
+        status_code: 200
+        return_content: true
+        timeout: 5
+      register: vllm_ready
+      until:
+        - vllm_ready.status is defined
+        - vllm_ready.status == 200
+        - vllm_ready.json is defined
+        - item in (vllm_ready.json.data | map(attribute='id') | list)
+      retries: 120      # 120 x 10s = 20 minutes per model
+      delay: 10
+      loop: "{{ models_list }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Re-fetch Jobs (final state)
+      kubernetes.core.k8s_info:
+        kind: Job
+        namespace: "{{ k8s_namespace }}"
+      register: k8s_jobs_final
+
+    - name: Fetch Pods (final state, includes image digests and node)
+      kubernetes.core.k8s_info:
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+      register: k8s_pods_final
+
+    - name: Save final Job manifests
+      ansible.builtin.copy:
+        content: |
+          {% for item in k8s_jobs_final.resources %}
+          ---
+          {{ item | to_nice_yaml }}
+          {% endfor %}
+        dest: "{{ hostvars['localhost']['run_dir'] }}/server_manifests.yaml"
+        mode: '0644'
+      delegate_to: localhost
+
+    - name: Save final Pod state
+      ansible.builtin.copy:
+        content: |
+          {% for item in k8s_pods_final.resources %}
+          ---
+          {{ item | to_nice_yaml }}
+          {% endfor %}
+        dest: "{{ hostvars['localhost']['run_dir'] }}/server_pods.yaml"
+        mode: '0644'
+      delegate_to: localhost
+
+
+# -----------------------------------------------------------------------------
+# 3. Client: baseline -> stress -> benchmark, with guaranteed cleanup.
+#    One play so block/always covers the whole benchmark. Server-side tasks
+#    are delegated to the server host.
+# -----------------------------------------------------------------------------
+- name: Run benchmark (client)
+  hosts: "{{ lookup('env', 'CLIENT_ID') }}"
+  gather_facts: false
+  vars_files:
+    - vllm_vars.yaml
+    - aiperf_vars.yaml
+  vars:
+    server_host: "{{ lookup('env', 'SERVER_ID') }}"
+    k8s_namespace: default
+    stress_pod_name: ram-bandwidth-stress
+    client_run_dir: "/tmp/{{ hostvars['localhost']['run_id'] }}"
+    aiperf_bin: "{{ ansible_python_interpreter | dirname }}/aiperf"
+    # Confirm with `aiperf profile --help`; change here if the flag differs.
+    aiperf_artifact_flag: "--artifact-dir"
+    benchmark_phases: [baseline, wram_stress]
+    benchmark_timeout_seconds: 7200
+    warmup_requests: 5
+    stress_settle_seconds: 30
+    # --- system metrics collection ---
+    metrics_dir: "/tmp/{{ hostvars['localhost']['run_id'] }}_metrics"   # on the server
+    metrics_step: 5s               # must be >= the Prometheus/DCGM scrape interval
+    metrics_pad_seconds: 5         # widen each run window on both sides
+    prometheus_settle_seconds: 30  # let the last samples be scraped
+    prometheus_namespace: monitoring
+    prometheus_service: prometheus-operated   # check: kubectl get svc -A | grep -i prometheus
+    prometheus_service_port: 9090
+    prometheus_local_port: 9090
+
+  tasks:
+    - name: Check client prerequisites
+      ansible.builtin.assert:
+        that: ansible_python_interpreter is defined
+        fail_msg: "Set ansible_python_interpreter (venv python) for the client host in the inventory."
+
+    - name: Check aiperf exists
+      ansible.builtin.stat:
+        path: "{{ aiperf_bin }}"
+      register: aiperf_stat
+      failed_when: not aiperf_stat.stat.exists
+
+    - name: Create client run directory
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Generate benchmark scripts (one per phase)
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd {{ client_run_dir }}
+
+          {% for model in models_list %}
+          {% for rps in request_rate %}
+          {% for count in request_count %}
+          "{{ aiperf_bin }}" profile \
+            --model "{{ model }}" \
+            --url "{{ model_urls[model] }}" \
+            --endpoint-type chat \
+            --streaming \
+            --request-rate {{ rps }} \
+            --request-count {{ count }} \
+            --tokenizer "{{ model }}" \
+            {{ aiperf_artifact_flag }} "{{ client_run_dir }}/artifacts/{{ phase }}/{{ model | replace('/', '_') }}_rps{{ rps }}_n{{ count }}" \
+            --profile-export-prefix "{{ phase }}" \
+            --export-level raw
+
+          {% endfor %}
+          {% endfor %}
+          {% endfor %}
+        dest: "{{ client_run_dir }}/run_{{ phase }}.sh"
+        mode: '0755'
+      loop: "{{ benchmark_phases }}"
+      loop_control:
+        loop_var: phase
+
+    - name: Benchmark with guaranteed cleanup
+      block:
+        - name: Verify tunnel and models are reachable from the client
+          ansible.builtin.uri:
+            url: "{{ model_urls[item] }}/v1/models"
+            status_code: 200
+            return_content: true
+            timeout: 5
+          register: client_check
+          until:
+            - client_check.status is defined
+            - client_check.status == 200
+            - client_check.json is defined
+            - item in (client_check.json.data | map(attribute='id') | list)
+          retries: 3
+          delay: 2
+          loop: "{{ models_list }}"
+          loop_control:
+            label: "{{ item }}"
+
+        - name: Warm up every model (not measured)
+          ansible.builtin.uri:
+            url: "{{ model_urls[item.0] }}/v1/chat/completions"
+            method: POST
+            body_format: json
+            body:
+              model: "{{ item.0 }}"
+              messages:
+                - role: user
+                  content: "Say hello."
+              max_tokens: 32
+            status_code: 200
+            timeout: 120
+          loop: "{{ models_list | product(range(warmup_requests | int)) | list }}"
+          loop_control:
+            label: "{{ item.0 }} #{{ item.1 }}"
+
+        - name: Run baseline (no stress)
+          ansible.builtin.command:
+            cmd: "{{ client_run_dir }}/run_baseline.sh"
+          async: "{{ benchmark_timeout_seconds }}"
+          poll: 30
+
+        - name: Start RAM bandwidth stress pod
+          kubernetes.core.k8s:
+            state: present
+            namespace: "{{ k8s_namespace }}"
+            definition: "{{ lookup('ansible.builtin.file', playbook_dir + '/manifests/ram_stress_pod.yaml') | from_yaml }}"
+            wait: true
+            wait_condition:
+              type: Ready
+              status: "True"
+            wait_timeout: 600
+          delegate_to: "{{ server_host }}"
+          register: ram_stress_pod
+
+        - name: Save stress pod manifest
+          ansible.builtin.copy:
+            content: "{{ ram_stress_pod.result | to_nice_yaml }}"
+            dest: "{{ hostvars['localhost']['run_dir'] }}/ram_stress_pod.yaml"
+            mode: '0644'
+          delegate_to: localhost
+
+        - name: Let stress reach steady state
+          ansible.builtin.pause:
+            seconds: "{{ stress_settle_seconds }}"
+
+        - name: Confirm stress pod is running (before)
+          kubernetes.core.k8s_info:
+            kind: Pod
+            name: "{{ stress_pod_name }}"
+            namespace: "{{ k8s_namespace }}"
+          delegate_to: "{{ server_host }}"
+          register: stress_before
+          failed_when: >-
+            stress_before.resources | length == 0
+            or stress_before.resources[0].status.phase != 'Running'
+
+        - name: Run benchmark with RAM stress
+          ansible.builtin.command:
+            cmd: "{{ client_run_dir }}/run_wram_stress.sh"
+          async: "{{ benchmark_timeout_seconds }}"
+          poll: 30
+
+        # The stress must have covered the whole run: still Running, never restarted.
+        - name: Confirm stress pod was running throughout (after)
+          kubernetes.core.k8s_info:
+            kind: Pod
+            name: "{{ stress_pod_name }}"
+            namespace: "{{ k8s_namespace }}"
+          delegate_to: "{{ server_host }}"
+          register: stress_after
+          failed_when: >-
+            stress_after.resources | length == 0
+            or stress_after.resources[0].status.phase != 'Running'
+            or (stress_after.resources[0].status.containerStatuses[0].restartCount | default(0) | int) > 0
+
+        - name: Collect system metrics for every run window
+          ansible.builtin.include_tasks: collect_metrics.yml
+
+      always:
+        - name: Remove stress pod
+          kubernetes.core.k8s:
+            state: absent
+            api_version: v1
+            kind: Pod
+            name: "{{ stress_pod_name }}"
+            namespace: "{{ k8s_namespace }}"
+            wait: true
+            wait_timeout: 120
+          delegate_to: "{{ server_host }}"
+
+        - name: Stop Prometheus port-forward
+          ansible.builtin.command:
+            argv: [pkill, -f, "kubectl port-forward.*{{ prometheus_local_port }}:{{ prometheus_service_port }}"]
+          delegate_to: "{{ server_host }}"
+          failed_when: false
+          changed_when: false
+
+        - name: Check for collected metrics
+          ansible.builtin.stat:
+            path: "{{ metrics_dir }}"
+          delegate_to: "{{ server_host }}"
+          register: metrics_stat
+
+        - name: Compress metrics
+          ansible.builtin.command:
+            cmd: "tar -czf {{ metrics_dir }}.tar.gz -C {{ metrics_dir }} --exclude=scrapper ."
+          delegate_to: "{{ server_host }}"
+          when: metrics_stat.stat.exists
+
+        - name: Transfer metrics to controller
+          ansible.builtin.fetch:
+            src: "{{ metrics_dir }}.tar.gz"
+            dest: "{{ hostvars['localhost']['run_dir'] }}/system_metrics.tar.gz"
+            flat: true
+          delegate_to: "{{ server_host }}"
+          when: metrics_stat.stat.exists
+
+        - name: Delete metrics from the server
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "{{ metrics_dir }}"
+            - "{{ metrics_dir }}.tar.gz"
+          delegate_to: "{{ server_host }}"
+
+        - name: Check for artifacts (partial results are kept on failure)
+          ansible.builtin.stat:
+            path: "{{ client_run_dir }}/artifacts"
+          register: artifacts_stat
+
+        - name: Compress artifacts
+          ansible.builtin.command:
+            cmd: "tar -czf {{ client_run_dir }}/artifacts.tar.gz -C {{ client_run_dir }} artifacts"
+          when: artifacts_stat.stat.exists
+
+        - name: Transfer results to controller
+          ansible.builtin.fetch:
+            src: "{{ client_run_dir }}/artifacts.tar.gz"
+            dest: "{{ hostvars['localhost']['run_dir'] }}/"
+            flat: true
+          when: artifacts_stat.stat.exists
+
+        - name: Delete client run directory
+          ansible.builtin.file:
+            path: "{{ client_run_dir }}"
+            state: absent
