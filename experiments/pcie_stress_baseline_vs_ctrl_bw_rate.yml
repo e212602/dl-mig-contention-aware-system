@@ -9,13 +9,29 @@
     wait: true
     wait_timeout: 120
 
-- name: Remove previous PCIe worker jobs
+- name: Remove previous PCIe worker jobs (and their pods)
   kubernetes.core.k8s:
     state: absent
     api_version: batch/v1
     kind: Job
     name: "ops-{{ item.worker_number }}"
     namespace: "{{ k8s_namespace }}"
+    delete_options:
+      propagationPolicy: Foreground
+    wait: true
+    wait_timeout: 120
+  loop: "{{ pcie_workers }}"
+  loop_control:
+    label: "ops-{{ item.worker_number }}"
+
+- name: Remove any orphaned PCIe worker pods
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Pod
+    namespace: "{{ k8s_namespace }}"
+    label_selectors:
+      - "job-name=ops-{{ item.worker_number }}"
     wait: true
     wait_timeout: 120
   loop: "{{ pcie_workers }}"
@@ -26,6 +42,7 @@
   ansible.builtin.file:
     path: "{{ rate_control_dir }}"
     state: absent
+  become: true
 
 - name: Recreate the empty rate-control directory
   ansible.builtin.file:
@@ -37,6 +54,7 @@
   ansible.builtin.file:
     path: "{{ pcie_results_dir }}/ops-v2-worker-{{ item.worker_number }}-bw_control={{ item.bw_control }}.csv"
     state: absent
+  become: true
   loop: "{{ pcie_workers }}"
   loop_control:
     label: "worker {{ item.worker_number }} (bw_control={{ item.bw_control }})"

@@ -14,7 +14,7 @@ spec:
             - -c
             - |
               echo "Waiting for rate-control file to be initialized..."
-              until [ -f /tmp/rate-control/ready-ops-{{ .Values.worker_number }} ]; do
+              until [ -f /tmp/rate-control/ready-ops-1 ]; do
                 echo "not ready yet, sleeping..."
                 sleep 1
               done
@@ -26,13 +26,13 @@ spec:
         - name: ops
           image: e8113/pcie_test
           env:
-            # Only set LD_PRELOAD if bw_control is NOT equal to "on"
+            # Only set LD_PRELOAD if bw_control is equal to "on"
             {{- if ne .Values.bw_control "on" }}
             - name: LD_PRELOAD
               value: "/mnt/libvgpu.so"
             {{- end }}
             - name: SHARED_REGION_CACHE_ENV
-              value: "/tmp/rate-control/rate-control-ops-{{ .Values.worker_number }}"
+              value: "/tmp/rate-control/rate-control-ops-1"
             - name: LIBCUDA_LOG_LEVEL
               value: "0"
             - name: PCIE_RESULTS_CSV
