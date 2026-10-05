@@ -1,0 +1,125 @@
+---
+# PCIe stress comparison: one bandwidth-controlled worker and one un-controlled
+# worker run concurrently for each controller GB_RATE setting.
+#
+# Required environment: SERVER_ID (inventory host for the Kubernetes server)
+# Requires manifests/controller_template.yaml and manifests/pice_stress_template.yaml.
+# Results: ./results/pcie_stress_baseline_vs_ctrl_bw_<timestamp>/
+
+- name: Prepare PCIe bandwidth comparison run
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    experiment_name: pcie_stress_baseline_vs_ctrl_bw
+    output_base_dir: "{{ lookup('env', 'PWD') }}/results"
+    server_host: "{{ lookup('env', 'SERVER_ID') }}"
+    gb_rate_values: [1, 2, 3, 4, 5, 6]
+    pcie_workers:
+      - worker_number: 1
+        bw_control: "on"
+      - worker_number: 2
+        bw_control: "off"
+
+  tasks:
+    - name: Validate experiment inputs
+      ansible.builtin.assert:
+        that:
+          - server_host | length > 0
+          - gb_rate_values | length > 0
+          - pcie_workers | length == 2
+          - pcie_workers | map(attribute='worker_number') | unique | length == 2
+        fail_msg: "Set SERVER_ID and configure two workers with unique worker numbers."
+
+    - name: Capture run timestamp
+      ansible.builtin.set_fact:
+        timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
+
+    - name: Set run identity and output directory
+      ansible.builtin.set_fact:
+        run_id: "{{ experiment_name }}_{{ timestamp }}"
+        run_dir: "{{ output_base_dir }}/{{ experiment_name }}_{{ timestamp }}"
+
+    - name: Create local output directory
+      ansible.builtin.file:
+        path: "{{ run_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Get git commit of this repository
+      ansible.builtin.command: git rev-parse HEAD
+      args:
+        chdir: "{{ playbook_dir }}"
+      register: git_commit
+      failed_when: false
+      changed_when: false
+
+    - name: Write run metadata
+      ansible.builtin.copy:
+        dest: "{{ run_dir }}/run_metadata.json"
+        mode: "0644"
+        content: "{{ run_metadata | to_nice_json }}"
+      vars:
+        run_metadata:
+          experiment_name: "{{ experiment_name }}"
+          run_id: "{{ run_id }}"
+          timestamp: "{{ timestamp }}"
+          git_commit: "{{ git_commit.stdout | default('unknown') }}"
+          parameters:
+            bw_control: "{{ pcie_workers | map(attribute='bw_control') | list }}"
+            worker_number: "{{ pcie_workers | map(attribute='worker_number') | list }}"
+            gb_rate: "{{ gb_rate_values }}"
+
+- name: Run PCIe worker comparison on the server
+  hosts: "{{ hostvars['localhost']['server_host'] }}"
+  gather_facts: false
+  vars:
+    k8s_namespace: default
+    rate_control_dir: /home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control
+    pcie_results_dir: /tmp/results
+    controller_template_file: "{{ playbook_dir }}/manifests/controller_template.yaml"
+    ops_template_file: "{{ playbook_dir }}/manifests/pice_stress_template.yaml"
+    local_run_dir: "{{ hostvars['localhost']['run_dir'] }}"
+    pcie_workers: "{{ hostvars['localhost']['pcie_workers'] }}"
+    gb_rate_values: "{{ hostvars['localhost']['gb_rate_values'] }}"
+
+  tasks:
+    - name: Run each GB_RATE with a clean server state
+      block:
+        - name: Execute sequential PCIe stress rate sweep
+          ansible.builtin.include_tasks: pcie_stress_baseline_vs_ctrl_bw_rate.yml
+          loop: "{{ gb_rate_values }}"
+          loop_control:
+            loop_var: current_gb_rate
+            label: "GB_RATE={{ current_gb_rate }}"
+          vars:
+            gb_rate: "{{ current_gb_rate }}"
+
+      always:
+        - name: Remove controller pod after the rate sweep
+          kubernetes.core.k8s:
+            state: absent
+            api_version: v1
+            kind: Pod
+            name: controller
+            namespace: "{{ k8s_namespace }}"
+            wait: true
+            wait_timeout: 120
+
+        - name: Remove PCIe worker jobs after the rate sweep
+          kubernetes.core.k8s:
+            state: absent
+            api_version: batch/v1
+            kind: Job
+            name: "ops-{{ item.worker_number }}"
+            namespace: "{{ k8s_namespace }}"
+            wait: true
+            wait_timeout: 120
+          loop: "{{ pcie_workers }}"
+          loop_control:
+            label: "ops-{{ item.worker_number }}"
+
+        - name: Remove rate-control state after the rate sweep
+          ansible.builtin.file:
+            path: "{{ rate_control_dir }}"
+            state: absent
