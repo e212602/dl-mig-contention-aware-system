@@ -1,0 +1,313 @@
+---
+- name: Systems Benchmarking Experiment Matrix Runner
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # --- Experiment Metadata ---
+    # experiment_name: "k8s_app_testing_setup"
+    output_base_dir: "{{ lookup('env', 'PWD') }}/results"
+    
+    # --- Target Kubernetes Details ---
+    k8s_namespace: "default"
+    # k8s_deployment_name: "my-app-deployment"
+    # k8s_container_name: "my-app"
+    
+    # --- Experiment Parameter Matrix ---
+    # Customize your application & client variations here
+    # app_worker_threads: [2, 4, 8]
+    # app_memory_limits: ["512Mi", "1024Mi"]
+    # client_concurrency_levels: [10, 50, 100]
+    # benchmark_duration_seconds: 30
+
+  tasks:
+    - name: Ensure results directory exists
+      ansible.builtin.file:
+        path: "{{ output_base_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Capture timestamp for all plays
+      ansible.builtin.set_fact:
+        timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
+
+    - name: Set Run ID
+      ansible.builtin.set_fact:
+        run_id: "run_{{ timestamp }}"
+        
+    - name: Set Output directory
+      ansible.builtin.set_fact:
+        run_dir: "{{ output_base_dir }}/{{ run_id }}"
+
+    - name: Create directory for Output results
+      ansible.builtin.file:
+        path: "{{ run_dir }}"
+        state: directory
+        mode: '0755'
+
+    # - name: Get current Git commit hash for experiment versioning
+    #   ansible.builtin.command: git rev-parse HEAD
+    #   register: git_commit
+    #   failed_when: false
+    #   changed_when: false
+
+    # - name: Start Experiment Matrix Loop
+    #   ansible.builtin.include_tasks: run_single_experiment.yml
+    #   loop: "{{ query('ansible.builtin.nested', app_worker_threads, app_memory_limits, client_concurrency_levels) }}"
+    #   loop_control:
+    #     loop_var: matrix_item
+    #     label: "Workers: {{ matrix_item[0] }} | Mem: {{ matrix_item[1] }} | Clients: {{ matrix_item[2] }}"
+
+
+# ==============================================================================
+# Task File: Single Experiment Iteration
+# ==============================================================================
+- name: Server Gather Information
+  hosts: "{{ lookup('env', 'SERVER_ID') }}"
+  gather_facts: no
+
+  vars:
+    # current_workers: "{{ matrix_item[0] }}"
+    # current_memory: "{{ matrix_item[1] }}"
+    # current_concurrency: "{{ matrix_item[2] }}"
+    # timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
+  
+  tasks:
+    - name: Display current experiment run parameters
+      ansible.builtin.debug:
+        msg: >
+          Starting Run: "{{ hostvars['localhost']['run_id'] }}"
+          Output written to "{{ hostvars['localhost']['run_dir'] }}"
+    
+    - name: Fetch all deployments/jobs in a namespace
+      kubernetes.core.k8s_info:
+        kind: Job
+        namespace: default
+      register: k8s_jobs
+
+    - name: Set facts from fetched Kubernetes resources
+      ansible.builtin.set_fact:
+        deployments: "{{ k8s_jobs.resources }}"
+
+    # - name: Update --cpu-offload-gb in Job args (delete & recreate)
+    #   ansible.builtin.include_tasks: update_job_args.yml
+    #   loop: "{{ k8s_jobs.resources }}"
+    #   loop_control:
+    #     loop_var: job
+    #     label: "{{ job.metadata.name }}"
+
+    # - name: Re-fetch Jobs after the update
+    #   kubernetes.core.k8s_info:
+    #     kind: Job
+    #     namespace: default
+    #   register: k8s_jobs
+
+    - name: Save Jobs manifests
+      ansible.builtin.copy:
+        content: |
+          {% for item in k8s_jobs.resources %}
+          ---
+          {{ item | to_nice_yaml }}
+          {% endfor %}
+        dest: "{{ hostvars['localhost']['run_dir'] }}/server_manifests.yaml"
+        mode: '0644'
+      delegate_to: 127.0.0.1
+
+
+- name: Client Execution Tasks
+  hosts: "{{ lookup('env', 'CLIENT_ID') }}"
+  gather_facts: no
+
+  vars:
+    output_base_dir: "{{ lookup('env', 'PWD') }}/results"
+    vars:
+    models_list:
+      - "RedHatAI/gemma-2-2b-it-quantized.w4a16"
+      - "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16"
+      - "Qwen/Qwen2.5-1.5B-Instruct"
+      - "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8"
+
+    # Dictionary mapping each model to its specific URL
+    model_urls:
+      "RedHatAI/gemma-2-2b-it-quantized.w4a16": "http://localhost:8080/gemma"
+      "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16": "http://localhost:8080/smollm"
+      "Qwen/Qwen2.5-1.5B-Instruct": "http://localhost:8080/qwen3"
+      "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8": "http://localhost:8080/qwen25"
+
+    request_rate: ["10"]
+    request_count: ["200"]
+
+  tasks:
+    - name: Lock random client run directory path
+      ansible.builtin.set_fact:
+        client_run_dir: "/tmp/run_{{ 999999 | random | string | to_uuid }}"
+
+    - name: Display current experiment run parameters
+      ansible.builtin.debug:
+        msg: >
+          Starting Run: {{ hostvars['localhost']['run_id'] }}
+          Output written to "{{ hostvars['localhost']['run_dir'] }}"
+          Client Run directory: {{ client_run_dir }}
+    
+    - name: Create directory for run artifacts
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Create an executable bash script for Exclusive
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # Define full path to the virtualenv binary directory
+          AIPERF_BIN="{{ ansible_python_interpreter | dirname }}/aiperf"
+          cd {{ client_run_dir }}
+
+          {% for item in models_list %}
+          {% for rps in request_rate %}
+          {% for num_r in request_count %}
+          "$AIPERF_BIN" profile \
+            --model "{{ item }}" \
+            --url "{{ model_urls.get(item, 'http://localhost:8080/v1/chat/completions') }}" \
+            --endpoint-type chat \
+            --streaming \
+            --request-rate {{ rps }} \
+            --request-count {{ num_r }} \
+            --tokenizer "{{ item }}" \
+            --profile-export-prefix='Exclusive' \
+            --export-level='raw'
+
+          {% endfor %}
+          {% endfor %}
+          {% endfor %}
+        dest: "{{ client_run_dir }}/run_exclusive.sh"
+        mode: '0755'
+
+    - name: Create an executable bash script for Concurrent
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          AIPERF_BIN="{{ ansible_python_interpreter | dirname }}/aiperf"
+          cd {{ client_run_dir }}
+
+          {% for item in models_list %}
+          {% for rps in request_rate %}
+          {% for num_r in request_count %}
+          "$AIPERF_BIN" profile \
+            --model "{{ item }}" \
+            --url "{{ model_urls.get(item, 'http://localhost:8080/v1/chat/completions') }}" \
+            --endpoint-type chat \
+            --streaming \
+            --request-rate {{ rps }} \
+            --request-count {{ num_r }} \
+            --tokenizer "{{ item }}" \
+            --profile-export-prefix='Concurrent' \
+            --export-level='raw' &
+
+          {% endfor %}
+          {% endfor %}
+          {% endfor %}
+
+          # Wait for all background aiperf instances to complete before exiting
+          wait
+        dest: "{{ client_run_dir }}/run_concurrent.sh"
+        mode: '0755'
+          
+    - name: Execute script with active virtual environment PATH
+      ansible.builtin.command:
+        cmd: "{{ client_run_dir }}/run_concurrent.sh"
+
+    - name: Compress Artifacts
+      ansible.builtin.command:
+        cmd: "tar -czf {{ client_run_dir }}/artifacts.tar.gz -C {{ client_run_dir }} artifacts"
+
+    - name: Transfer Results To Local Controller
+      ansible.builtin.fetch:
+        src: "{{ client_run_dir }}/artifacts.tar.gz"
+        dest: "{{ hostvars['localhost']['run_dir'] }}/"
+        flat: true
+      
+
+    # At the end remove created directory from client
+    - name: Delete directory for run artifacts
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}"
+        state: absent
+      
+
+    # --- Step 1: Modify Remote Kubernetes Deployment Specs ---
+    # - name: Update remote Kubernetes Pod environment variables & resource limits
+    #   kubernetes.core.k8s:
+    #     state: present
+    #     definition:
+    #       apiVersion: apps/v1
+    #       kind: Deployment
+    #       metadata:
+    #         name: "{{ k8s_deployment_name }}"
+    #         namespace: "{{ k8s_namespace }}"
+    #       spec:
+    #         template:
+    #           spec:
+    #             containers:
+    #               - name: "{{ k8s_container_name }}"
+    #                 env:
+    #                   - name: WORKER_THREADS
+    #                     value: "{{ current_workers | string }}"
+    #                 resources:
+    #                   limits:
+    #                     memory: "{{ current_memory }}"
+    #                   requests:
+    #                     memory: "{{ current_memory }}"
+
+    # - name: Wait for Kubernetes deployment rollout to complete
+    #   kubernetes.core.k8s_info:
+    #     kind: Deployment
+    #     name: "{{ k8s_deployment_name }}"
+    #     namespace: "{{ k8s_namespace }}"
+    #   register: deployment_status
+    #   until:
+    #     - deployment_status.resources[0].status.readyReplicas is defined
+    #     - deployment_status.resources[0].status.readyReplicas == deployment_status.resources[0].status.replicas
+    #   retries: 20
+    #   delay: 5
+
+    # - name: Stabilization pause after rollout
+    #   ansible.builtin.pause:
+    #     seconds: 5
+
+    # --- Step 2: Execute Local Client Benchmark ---
+    # Replace the command below with your client runner (e.g., k6, Locust, or custom Python runner)
+    # - name: Execute local client benchmark command
+    #   ansible.builtin.command: >
+    #     echo '{"rps": {{ 1000 * (current_workers | int) / (current_concurrency | int) }}, "p99_latency_ms": {{ 50 * (current_concurrency | int) / (current_workers | int) }}}'
+    #   register: benchmark_output
+    #   changed_when: false
+
+    # --- Step 3: Record Metadata and Store Results ---
+    # - name: Construct structured result snapshot
+    #   ansible.builtin.set_fact:
+    #     run_metadata:
+    #       experiment_name: "{{ experiment_name }}"
+    #       run_id: "{{ run_id }}"
+    #       timestamp: "{{ timestamp }}"
+    #       git_commit: "{{ git_commit.stdout | default('unknown') }}"
+    #       parameters:
+    #         app:
+    #           worker_threads: "{{ current_workers }}"
+    #           memory_limit: "{{ current_memory }}"
+    #         client:
+    #           concurrency: "{{ current_concurrency }}"
+    #           duration_seconds: "{{ benchmark_duration_seconds }}"
+    #       raw_benchmark_stdout: "{{ benchmark_output.stdout }}"
+
+    # - name: Save structured metadata & results to JSON
+    #   ansible.builtin.copy:
+    #     content: "{{ run_metadata | to_nice_json }}"
+    #     dest: "{{ run_dir }}/metadata_and_results.json"
+    #     mode: '0644'
+

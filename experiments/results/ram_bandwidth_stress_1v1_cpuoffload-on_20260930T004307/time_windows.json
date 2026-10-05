@@ -1,0 +1,66 @@
+[
+    {
+        "end": "2026-09-29T22:47:49Z",
+        "end_unix": 1790722069,
+        "file": "/tmp/ram_bandwidth_stress_1v1_cpuoffload-on_20260930T004307/artifacts/baseline/RedHatAI_gemma-2-2b-it-quantized.w4a16_rps10_n200/baseline_raw.jsonl",
+        "requests": 200,
+        "start": "2026-09-29T22:44:26Z",
+        "start_unix": 1790721866
+    },
+    {
+        "end": "2026-09-29T22:49:54Z",
+        "end_unix": 1790722194,
+        "file": "/tmp/ram_bandwidth_stress_1v1_cpuoffload-on_20260930T004307/artifacts/baseline/RedHatAI_SmolLM-1.7B-Instruct-quantized.w8a16_rps10_n200/baseline_raw.jsonl",
+        "requests": 200,
+        "start": "2026-09-29T22:48:01Z",
+        "start_unix": 1790722081
+    },
+    {
+        "end": "2026-09-29T22:51:39Z",
+        "end_unix": 1790722299,
+        "file": "/tmp/ram_bandwidth_stress_1v1_cpuoffload-on_20260930T004307/artifacts/baseline/Qwen_Qwen2.5-1.5B-Instruct_rps10_n200/baseline_raw.jsonl",
+        "requests": 200,
+        "start": "2026-09-29T22:50:08Z",
+        "start_unix": 1790722208
+    },
+    {
+        "end": "2026-09-29T22:54:26Z",
+        "end_unix": 1790722466,
+        "file": "/tmp/ram_bandwidth_stress_1v1_cpuoffload-on_20260930T004307/artifacts/baseline/Qwen_Qwen2.5-3B-Instruct-GPTQ-Int8_rps10_n200/baseline_raw.jsonl",
+        "requests": 200,
+        "start": "2026-09-29T22:51:52Z",
+        "start_unix": 1790722312
+    },
+    {
+        "end": "2026-09-29T22:59:45Z",
+        "end_unix": 1790722785,
+        "file": "/tmp/ram_bandwidth_stress_1v1_cpuoffload-on_20260930T004307/artifacts/wram_stress/RedHatAI_gemma-2-2b-it-quantized.w4a16_rps10_n200/wram_stress_raw.jsonl",
+        "requests": 200,
+        "start": "2026-09-29T22:56:23Z",
+        "start_unix": 1790722583
+    },
+    {
+        "end": "2026-09-29T23:01:52Z",
+        "end_unix": 1790722912,
+        "file": "/tmp/ram_bandwidth_stress_1v1_cpuoffload-on_20260930T004307/artifacts/wram_stress/RedHatAI_SmolLM-1.7B-Instruct-quantized.w8a16_rps10_n200/wram_stress_raw.jsonl",
+        "requests": 200,
+        "start": "2026-09-29T22:59:59Z",
+        "start_unix": 1790722799
+    },
+    {
+        "end": "2026-09-29T23:03:36Z",
+        "end_unix": 1790723016,
+        "file": "/tmp/ram_bandwidth_stress_1v1_cpuoffload-on_20260930T004307/artifacts/wram_stress/Qwen_Qwen2.5-1.5B-Instruct_rps10_n200/wram_stress_raw.jsonl",
+        "requests": 200,
+        "start": "2026-09-29T23:02:07Z",
+        "start_unix": 1790722927
+    },
+    {
+        "end": "2026-09-29T23:06:25Z",
+        "end_unix": 1790723185,
+        "file": "/tmp/ram_bandwidth_stress_1v1_cpuoffload-on_20260930T004307/artifacts/wram_stress/Qwen_Qwen2.5-3B-Instruct-GPTQ-Int8_rps10_n200/wram_stress_raw.jsonl",
+        "requests": 200,
+        "start": "2026-09-29T23:03:51Z",
+        "start_unix": 1790723031
+    }
+]

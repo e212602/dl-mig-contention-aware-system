@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sample
+spec:
+  parallelism: 1
+  template:
+    spec:
+      containers:
+      - command:
+        - /bin/bash
+        # - -c
+        # - |
+        #   #!/bin/bash
+        #   export DS_SDMA_ALLGATHER=0
+        #   export TORCH_EXTENSIONS_DIR=/tmp/torch_extensions
+        #   export DS_SKIP_CUDA_CHECK=1
+        #   export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+        #   export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+        #   export TORCH_NCCL_ENABLE_MONITORING=0
+        #   python "train_qwen3_zero3.py" --model_name "${MODEL:-sample}" --ds_config "${DS_CONFIG:-ds_config_zero3.json}"
+        image: e8113/deepspeed:v1
+        imagePullPolicy: Never
+        name: sample
+        env:
+        - name: MODEL
+          value: sample
+        resources:
+          limits:
+            cpu: "5"
+            memory: "8Gi"
+            nvidia.com/gpu: 1
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /home/deepspeed/.cache/huggingface
+        stdin: true
+        tty: true
+      volumes:
+      - name: hf-cache
+        hostPath:
+          path: /home/ubuntu/.cache/huggingface
+          type: Directory
+      restartPolicy: Never

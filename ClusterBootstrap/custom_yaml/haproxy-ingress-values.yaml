@@ -1,0 +1,9 @@
+# Expose HAProxy via host port on all cluster nodes
+controller:
+  ingressClassResource:
+    enabled: true
+  kind: DaemonSet
+  daemonset:
+    useHostPort: true
+  service:
+    type: ClusterIP

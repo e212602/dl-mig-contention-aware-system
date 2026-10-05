@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ops
+spec:
+  parallelism: 1
+  template:
+    spec:
+      containers:
+      - command:
+        - /bin/bash
+        - -c
+        - '#!/bin/bash
+
+          ./nvbandwidth --disableAffinity -t 0 -i 10
+
+          '
+        env:
+        - name: LD_PRELOAD
+          value: "/mnt/libvgpu.so"
+        image: e8113/nvbandwidth:1.0.0
+        name: ops
+        resources:
+          limits:
+            cpu: '2'
+            memory: 2Gi
+            nvidia.com/gpu: 1
+        stdin: true
+        tty: true
+        volumeMounts:
+          - mountPath: /mnt
+            name: vgpu
+            readOnly: true
+      restartPolicy: Never
+      volumes:
+        - name: vgpu
+          hostPath:
+            path: /home/ubuntu/work/projects/HAMi-core/build
+            type: Directory

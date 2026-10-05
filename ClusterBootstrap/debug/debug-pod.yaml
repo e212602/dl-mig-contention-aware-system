@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dl-base-debug
+spec:
+  containers:
+    - name: debug
+      image: e8113/dl-base:latest
+      command: ["/bin/bash"]
+      args: ["-c", "sleep infinity"]
+      stdin: true
+      tty: true
+  restartPolicy: Never

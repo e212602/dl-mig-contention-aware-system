@@ -1,0 +1,956 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+    creationTimestamp: '2026-09-29T20:40:11Z'
+    generation: 1
+    labels:
+        app.kubernetes.io/name: vllm-server-gemma-4-e2b
+    managedFields:
+    -   apiVersion: batch/v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:metadata:
+                f:labels:
+                    .: {}
+                    f:app.kubernetes.io/name: {}
+            f:spec:
+                f:backoffLimit: {}
+                f:completionMode: {}
+                f:manualSelector: {}
+                f:parallelism: {}
+                f:podReplacementPolicy: {}
+                f:suspend: {}
+                f:template:
+                    f:metadata:
+                        f:labels:
+                            .: {}
+                            f:batch.kubernetes.io/job-name: {}
+                            f:job-name: {}
+                    f:spec:
+                        f:containers:
+                            k:{"name":"vllm-server-gemma-4-e2b"}:
+                                .: {}
+                                f:args: {}
+                                f:env:
+                                    .: {}
+                                    k:{"name":"HF_HOME"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:value: {}
+                                    k:{"name":"HF_TOKEN"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:valueFrom:
+                                            .: {}
+                                            f:secretKeyRef: {}
+                                    k:{"name":"MODEL_NAME"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:value: {}
+                                f:image: {}
+                                f:imagePullPolicy: {}
+                                f:name: {}
+                                f:ports:
+                                    .: {}
+                                    k:{"containerPort":8000,"protocol":"TCP"}:
+                                        .: {}
+                                        f:containerPort: {}
+                                        f:name: {}
+                                        f:protocol: {}
+                                f:readinessProbe:
+                                    .: {}
+                                    f:failureThreshold: {}
+                                    f:httpGet:
+                                        .: {}
+                                        f:path: {}
+                                        f:port: {}
+                                        f:scheme: {}
+                                    f:initialDelaySeconds: {}
+                                    f:periodSeconds: {}
+                                    f:successThreshold: {}
+                                    f:timeoutSeconds: {}
+                                f:resources:
+                                    .: {}
+                                    f:limits:
+                                        .: {}
+                                        f:cpu: {}
+                                        f:memory: {}
+                                        f:nvidia.com/gpu: {}
+                                    f:requests:
+                                        .: {}
+                                        f:cpu: {}
+                                        f:memory: {}
+                                        f:nvidia.com/gpu: {}
+                                f:stdin: {}
+                                f:terminationMessagePath: {}
+                                f:terminationMessagePolicy: {}
+                                f:tty: {}
+                                f:volumeMounts:
+                                    .: {}
+                                    k:{"mountPath":"/dev/shm"}:
+                                        .: {}
+                                        f:mountPath: {}
+                                        f:name: {}
+                                    k:{"mountPath":"/root/.cache/huggingface"}:
+                                        .: {}
+                                        f:mountPath: {}
+                                        f:name: {}
+                        f:dnsPolicy: {}
+                        f:restartPolicy: {}
+                        f:schedulerName: {}
+                        f:securityContext: {}
+                        f:terminationGracePeriodSeconds: {}
+                        f:volumes:
+                            .: {}
+                            k:{"name":"dshm"}:
+                                .: {}
+                                f:emptyDir:
+                                    .: {}
+                                    f:medium: {}
+                                    f:sizeLimit: {}
+                                f:name: {}
+                            k:{"name":"hf-cache"}:
+                                .: {}
+                                f:hostPath:
+                                    .: {}
+                                    f:path: {}
+                                    f:type: {}
+                                f:name: {}
+        manager: OpenAPI-Generator
+        operation: Update
+        time: '2026-09-29T20:40:11Z'
+    -   apiVersion: batch/v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:status:
+                f:active: {}
+                f:ready: {}
+                f:startTime: {}
+                f:terminating: {}
+                f:uncountedTerminatedPods: {}
+        manager: kube-controller-manager
+        operation: Update
+        subresource: status
+        time: '2026-09-29T20:43:04Z'
+    name: vllm-server-gemma-4-e2b
+    namespace: default
+    resourceVersion: '17554118'
+    uid: d8f3eabc-de60-4b9d-b01f-c5ec225e9e78
+spec:
+    backoffLimit: 6
+    completionMode: NonIndexed
+    manualSelector: false
+    parallelism: 1
+    podReplacementPolicy: TerminatingOrFailed
+    selector:
+        matchLabels:
+            batch.kubernetes.io/controller-uid: d8f3eabc-de60-4b9d-b01f-c5ec225e9e78
+    suspend: false
+    template:
+        metadata:
+            labels:
+                batch.kubernetes.io/controller-uid: d8f3eabc-de60-4b9d-b01f-c5ec225e9e78
+                batch.kubernetes.io/job-name: vllm-server-gemma-4-e2b
+                controller-uid: d8f3eabc-de60-4b9d-b01f-c5ec225e9e78
+                job-name: vllm-server-gemma-4-e2b
+        spec:
+            containers:
+            -   args:
+                - --model
+                - $(MODEL_NAME)
+                - --tensor-parallel-size
+                - '1'
+                - --max-model-len
+                - '1024'
+                - --async-scheduling
+                - --limit-mm-per-prompt.video
+                - '0'
+                - --no-enable-prefix-caching
+                - --cpu-offload-gb
+                - '0.1'
+                - --gpu_memory_utilization
+                - '0.9'
+                env:
+                -   name: MODEL_NAME
+                    value: RedHatAI/gemma-2-2b-it-quantized.w4a16
+                -   name: HF_TOKEN
+                    valueFrom:
+                        secretKeyRef:
+                            key: HF_TOKEN
+                            name: hf-token-secret
+                -   name: HF_HOME
+                    value: /root/.cache/huggingface/
+                image: docker.io/vllm/vllm-openai:latest
+                imagePullPolicy: Never
+                name: vllm-server-gemma-4-e2b
+                ports:
+                -   containerPort: 8000
+                    name: gemma-4e2b
+                    protocol: TCP
+                readinessProbe:
+                    failureThreshold: 90
+                    httpGet:
+                        path: /health
+                        port: 8000
+                        scheme: HTTP
+                    initialDelaySeconds: 20
+                    periodSeconds: 10
+                    successThreshold: 1
+                    timeoutSeconds: 1
+                resources:
+                    limits:
+                        cpu: '5'
+                        memory: 16Gi
+                        nvidia.com/gpu: '1'
+                    requests:
+                        cpu: '5'
+                        memory: 16Gi
+                        nvidia.com/gpu: '1'
+                stdin: true
+                terminationMessagePath: /dev/termination-log
+                terminationMessagePolicy: File
+                tty: true
+                volumeMounts:
+                -   mountPath: /root/.cache/huggingface
+                    name: hf-cache
+                -   mountPath: /dev/shm
+                    name: dshm
+            dnsPolicy: ClusterFirst
+            restartPolicy: Never
+            schedulerName: default-scheduler
+            securityContext: {}
+            terminationGracePeriodSeconds: 30
+            volumes:
+            -   hostPath:
+                    path: /home/ubuntu/.cache/huggingface
+                    type: Directory
+                name: hf-cache
+            -   emptyDir:
+                    medium: Memory
+                    sizeLimit: 16Gi
+                name: dshm
+status:
+    active: 1
+    ready: 1
+    startTime: '2026-09-29T20:40:11Z'
+    terminating: 0
+    uncountedTerminatedPods: {}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+    creationTimestamp: '2026-09-29T20:40:19Z'
+    generation: 1
+    labels:
+        app.kubernetes.io/name: vllm-server-qwen25-1o5b
+    managedFields:
+    -   apiVersion: batch/v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:metadata:
+                f:labels:
+                    .: {}
+                    f:app.kubernetes.io/name: {}
+            f:spec:
+                f:backoffLimit: {}
+                f:completionMode: {}
+                f:manualSelector: {}
+                f:parallelism: {}
+                f:podReplacementPolicy: {}
+                f:suspend: {}
+                f:template:
+                    f:metadata:
+                        f:labels:
+                            .: {}
+                            f:batch.kubernetes.io/job-name: {}
+                            f:job-name: {}
+                    f:spec:
+                        f:containers:
+                            k:{"name":"vllm-server-qwen25-1o5b"}:
+                                .: {}
+                                f:args: {}
+                                f:env:
+                                    .: {}
+                                    k:{"name":"HF_HOME"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:value: {}
+                                    k:{"name":"HF_TOKEN"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:valueFrom:
+                                            .: {}
+                                            f:secretKeyRef: {}
+                                    k:{"name":"MODEL_NAME"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:value: {}
+                                f:image: {}
+                                f:imagePullPolicy: {}
+                                f:name: {}
+                                f:ports:
+                                    .: {}
+                                    k:{"containerPort":8000,"protocol":"TCP"}:
+                                        .: {}
+                                        f:containerPort: {}
+                                        f:name: {}
+                                        f:protocol: {}
+                                f:readinessProbe:
+                                    .: {}
+                                    f:failureThreshold: {}
+                                    f:httpGet:
+                                        .: {}
+                                        f:path: {}
+                                        f:port: {}
+                                        f:scheme: {}
+                                    f:initialDelaySeconds: {}
+                                    f:periodSeconds: {}
+                                    f:successThreshold: {}
+                                    f:timeoutSeconds: {}
+                                f:resources:
+                                    .: {}
+                                    f:limits:
+                                        .: {}
+                                        f:cpu: {}
+                                        f:memory: {}
+                                        f:nvidia.com/gpu: {}
+                                    f:requests:
+                                        .: {}
+                                        f:cpu: {}
+                                        f:memory: {}
+                                        f:nvidia.com/gpu: {}
+                                f:stdin: {}
+                                f:terminationMessagePath: {}
+                                f:terminationMessagePolicy: {}
+                                f:tty: {}
+                                f:volumeMounts:
+                                    .: {}
+                                    k:{"mountPath":"/dev/shm"}:
+                                        .: {}
+                                        f:mountPath: {}
+                                        f:name: {}
+                                    k:{"mountPath":"/root/.cache/huggingface"}:
+                                        .: {}
+                                        f:mountPath: {}
+                                        f:name: {}
+                        f:dnsPolicy: {}
+                        f:restartPolicy: {}
+                        f:schedulerName: {}
+                        f:securityContext: {}
+                        f:terminationGracePeriodSeconds: {}
+                        f:volumes:
+                            .: {}
+                            k:{"name":"dshm"}:
+                                .: {}
+                                f:emptyDir:
+                                    .: {}
+                                    f:medium: {}
+                                    f:sizeLimit: {}
+                                f:name: {}
+                            k:{"name":"hf-cache"}:
+                                .: {}
+                                f:hostPath:
+                                    .: {}
+                                    f:path: {}
+                                    f:type: {}
+                                f:name: {}
+        manager: OpenAPI-Generator
+        operation: Update
+        time: '2026-09-29T20:40:19Z'
+    -   apiVersion: batch/v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:status:
+                f:active: {}
+                f:ready: {}
+                f:startTime: {}
+                f:terminating: {}
+                f:uncountedTerminatedPods: {}
+        manager: kube-controller-manager
+        operation: Update
+        subresource: status
+        time: '2026-09-29T20:42:38Z'
+    name: vllm-server-qwen25-1o5b
+    namespace: default
+    resourceVersion: '17554034'
+    uid: fd9b6ad5-3673-43cb-8e39-d045cd7c1b98
+spec:
+    backoffLimit: 6
+    completionMode: NonIndexed
+    manualSelector: false
+    parallelism: 1
+    podReplacementPolicy: TerminatingOrFailed
+    selector:
+        matchLabels:
+            batch.kubernetes.io/controller-uid: fd9b6ad5-3673-43cb-8e39-d045cd7c1b98
+    suspend: false
+    template:
+        metadata:
+            labels:
+                batch.kubernetes.io/controller-uid: fd9b6ad5-3673-43cb-8e39-d045cd7c1b98
+                batch.kubernetes.io/job-name: vllm-server-qwen25-1o5b
+                controller-uid: fd9b6ad5-3673-43cb-8e39-d045cd7c1b98
+                job-name: vllm-server-qwen25-1o5b
+        spec:
+            containers:
+            -   args:
+                - --model
+                - $(MODEL_NAME)
+                - --tensor-parallel-size
+                - '1'
+                - --max-model-len
+                - '1024'
+                - --async-scheduling
+                - --limit-mm-per-prompt.video
+                - '0'
+                - --no-enable-prefix-caching
+                - --cpu-offload-gb
+                - '0.2'
+                - --gpu_memory_utilization
+                - '0.9'
+                env:
+                -   name: MODEL_NAME
+                    value: Qwen/Qwen2.5-1.5B-Instruct
+                -   name: HF_TOKEN
+                    valueFrom:
+                        secretKeyRef:
+                            key: HF_TOKEN
+                            name: hf-token-secret
+                -   name: HF_HOME
+                    value: /root/.cache/huggingface/
+                image: docker.io/vllm/vllm-openai:latest
+                imagePullPolicy: Never
+                name: vllm-server-qwen25-1o5b
+                ports:
+                -   containerPort: 8000
+                    name: qwen25-1o5b
+                    protocol: TCP
+                readinessProbe:
+                    failureThreshold: 90
+                    httpGet:
+                        path: /health
+                        port: 8000
+                        scheme: HTTP
+                    initialDelaySeconds: 20
+                    periodSeconds: 10
+                    successThreshold: 1
+                    timeoutSeconds: 1
+                resources:
+                    limits:
+                        cpu: '5'
+                        memory: 16Gi
+                        nvidia.com/gpu: '1'
+                    requests:
+                        cpu: '5'
+                        memory: 16Gi
+                        nvidia.com/gpu: '1'
+                stdin: true
+                terminationMessagePath: /dev/termination-log
+                terminationMessagePolicy: File
+                tty: true
+                volumeMounts:
+                -   mountPath: /root/.cache/huggingface
+                    name: hf-cache
+                -   mountPath: /dev/shm
+                    name: dshm
+            dnsPolicy: ClusterFirst
+            restartPolicy: Never
+            schedulerName: default-scheduler
+            securityContext: {}
+            terminationGracePeriodSeconds: 30
+            volumes:
+            -   hostPath:
+                    path: /home/ubuntu/.cache/huggingface
+                    type: Directory
+                name: hf-cache
+            -   emptyDir:
+                    medium: Memory
+                    sizeLimit: 16Gi
+                name: dshm
+status:
+    active: 1
+    ready: 1
+    startTime: '2026-09-29T20:40:20Z'
+    terminating: 0
+    uncountedTerminatedPods: {}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+    creationTimestamp: '2026-09-29T20:40:28Z'
+    generation: 1
+    labels:
+        app.kubernetes.io/name: vllm-server-qwen25-3b
+    managedFields:
+    -   apiVersion: batch/v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:metadata:
+                f:labels:
+                    .: {}
+                    f:app.kubernetes.io/name: {}
+            f:spec:
+                f:backoffLimit: {}
+                f:completionMode: {}
+                f:manualSelector: {}
+                f:parallelism: {}
+                f:podReplacementPolicy: {}
+                f:suspend: {}
+                f:template:
+                    f:metadata:
+                        f:labels:
+                            .: {}
+                            f:batch.kubernetes.io/job-name: {}
+                            f:job-name: {}
+                    f:spec:
+                        f:containers:
+                            k:{"name":"vllm-server-qwen25-3b"}:
+                                .: {}
+                                f:args: {}
+                                f:env:
+                                    .: {}
+                                    k:{"name":"HF_HOME"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:value: {}
+                                    k:{"name":"HF_TOKEN"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:valueFrom:
+                                            .: {}
+                                            f:secretKeyRef: {}
+                                    k:{"name":"MODEL_NAME"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:value: {}
+                                f:image: {}
+                                f:imagePullPolicy: {}
+                                f:name: {}
+                                f:ports:
+                                    .: {}
+                                    k:{"containerPort":8000,"protocol":"TCP"}:
+                                        .: {}
+                                        f:containerPort: {}
+                                        f:name: {}
+                                        f:protocol: {}
+                                f:readinessProbe:
+                                    .: {}
+                                    f:failureThreshold: {}
+                                    f:httpGet:
+                                        .: {}
+                                        f:path: {}
+                                        f:port: {}
+                                        f:scheme: {}
+                                    f:initialDelaySeconds: {}
+                                    f:periodSeconds: {}
+                                    f:successThreshold: {}
+                                    f:timeoutSeconds: {}
+                                f:resources:
+                                    .: {}
+                                    f:limits:
+                                        .: {}
+                                        f:cpu: {}
+                                        f:memory: {}
+                                        f:nvidia.com/gpu: {}
+                                    f:requests:
+                                        .: {}
+                                        f:cpu: {}
+                                        f:memory: {}
+                                        f:nvidia.com/gpu: {}
+                                f:stdin: {}
+                                f:terminationMessagePath: {}
+                                f:terminationMessagePolicy: {}
+                                f:tty: {}
+                                f:volumeMounts:
+                                    .: {}
+                                    k:{"mountPath":"/dev/shm"}:
+                                        .: {}
+                                        f:mountPath: {}
+                                        f:name: {}
+                                    k:{"mountPath":"/root/.cache/huggingface"}:
+                                        .: {}
+                                        f:mountPath: {}
+                                        f:name: {}
+                        f:dnsPolicy: {}
+                        f:restartPolicy: {}
+                        f:schedulerName: {}
+                        f:securityContext: {}
+                        f:terminationGracePeriodSeconds: {}
+                        f:volumes:
+                            .: {}
+                            k:{"name":"dshm"}:
+                                .: {}
+                                f:emptyDir:
+                                    .: {}
+                                    f:medium: {}
+                                    f:sizeLimit: {}
+                                f:name: {}
+                            k:{"name":"hf-cache"}:
+                                .: {}
+                                f:hostPath:
+                                    .: {}
+                                    f:path: {}
+                                    f:type: {}
+                                f:name: {}
+        manager: OpenAPI-Generator
+        operation: Update
+        time: '2026-09-29T20:40:28Z'
+    -   apiVersion: batch/v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:status:
+                f:active: {}
+                f:ready: {}
+                f:startTime: {}
+                f:terminating: {}
+                f:uncountedTerminatedPods: {}
+        manager: kube-controller-manager
+        operation: Update
+        subresource: status
+        time: '2026-09-29T20:43:14Z'
+    name: vllm-server-qwen25-3b
+    namespace: default
+    resourceVersion: '17554154'
+    uid: df06d547-ae59-4b43-bd40-7885173ae5db
+spec:
+    backoffLimit: 6
+    completionMode: NonIndexed
+    manualSelector: false
+    parallelism: 1
+    podReplacementPolicy: TerminatingOrFailed
+    selector:
+        matchLabels:
+            batch.kubernetes.io/controller-uid: df06d547-ae59-4b43-bd40-7885173ae5db
+    suspend: false
+    template:
+        metadata:
+            labels:
+                batch.kubernetes.io/controller-uid: df06d547-ae59-4b43-bd40-7885173ae5db
+                batch.kubernetes.io/job-name: vllm-server-qwen25-3b
+                controller-uid: df06d547-ae59-4b43-bd40-7885173ae5db
+                job-name: vllm-server-qwen25-3b
+        spec:
+            containers:
+            -   args:
+                - --model
+                - $(MODEL_NAME)
+                - --tensor-parallel-size
+                - '1'
+                - --max-model-len
+                - '1024'
+                - --async-scheduling
+                - --limit-mm-per-prompt.video
+                - '0'
+                - --no-enable-prefix-caching
+                - --cpu-offload-gb
+                - '0.2'
+                - --gpu_memory_utilization
+                - '0.85'
+                env:
+                -   name: MODEL_NAME
+                    value: Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8
+                -   name: HF_TOKEN
+                    valueFrom:
+                        secretKeyRef:
+                            key: HF_TOKEN
+                            name: hf-token-secret
+                -   name: HF_HOME
+                    value: /root/.cache/huggingface/
+                image: docker.io/vllm/vllm-openai:latest
+                imagePullPolicy: Never
+                name: vllm-server-qwen25-3b
+                ports:
+                -   containerPort: 8000
+                    name: qwen25-3b
+                    protocol: TCP
+                readinessProbe:
+                    failureThreshold: 90
+                    httpGet:
+                        path: /health
+                        port: 8000
+                        scheme: HTTP
+                    initialDelaySeconds: 20
+                    periodSeconds: 10
+                    successThreshold: 1
+                    timeoutSeconds: 1
+                resources:
+                    limits:
+                        cpu: '5'
+                        memory: 16Gi
+                        nvidia.com/gpu: '1'
+                    requests:
+                        cpu: '5'
+                        memory: 16Gi
+                        nvidia.com/gpu: '1'
+                stdin: true
+                terminationMessagePath: /dev/termination-log
+                terminationMessagePolicy: File
+                tty: true
+                volumeMounts:
+                -   mountPath: /root/.cache/huggingface
+                    name: hf-cache
+                -   mountPath: /dev/shm
+                    name: dshm
+            dnsPolicy: ClusterFirst
+            restartPolicy: Never
+            schedulerName: default-scheduler
+            securityContext: {}
+            terminationGracePeriodSeconds: 30
+            volumes:
+            -   hostPath:
+                    path: /home/ubuntu/.cache/huggingface
+                    type: Directory
+                name: hf-cache
+            -   emptyDir:
+                    medium: Memory
+                    sizeLimit: 16Gi
+                name: dshm
+status:
+    active: 1
+    ready: 1
+    startTime: '2026-09-29T20:40:28Z'
+    terminating: 0
+    uncountedTerminatedPods: {}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+    creationTimestamp: '2026-09-29T20:40:42Z'
+    generation: 1
+    labels:
+        app.kubernetes.io/name: vllm-server-smollm-1o7b
+    managedFields:
+    -   apiVersion: batch/v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:metadata:
+                f:labels:
+                    .: {}
+                    f:app.kubernetes.io/name: {}
+            f:spec:
+                f:backoffLimit: {}
+                f:completionMode: {}
+                f:manualSelector: {}
+                f:parallelism: {}
+                f:podReplacementPolicy: {}
+                f:suspend: {}
+                f:template:
+                    f:metadata:
+                        f:labels:
+                            .: {}
+                            f:batch.kubernetes.io/job-name: {}
+                            f:job-name: {}
+                    f:spec:
+                        f:containers:
+                            k:{"name":"vllm-server-smollm-1o7b"}:
+                                .: {}
+                                f:args: {}
+                                f:env:
+                                    .: {}
+                                    k:{"name":"HF_HOME"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:value: {}
+                                    k:{"name":"HF_TOKEN"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:valueFrom:
+                                            .: {}
+                                            f:secretKeyRef: {}
+                                    k:{"name":"MODEL_NAME"}:
+                                        .: {}
+                                        f:name: {}
+                                        f:value: {}
+                                f:image: {}
+                                f:imagePullPolicy: {}
+                                f:name: {}
+                                f:ports:
+                                    .: {}
+                                    k:{"containerPort":8000,"protocol":"TCP"}:
+                                        .: {}
+                                        f:containerPort: {}
+                                        f:name: {}
+                                        f:protocol: {}
+                                f:readinessProbe:
+                                    .: {}
+                                    f:failureThreshold: {}
+                                    f:httpGet:
+                                        .: {}
+                                        f:path: {}
+                                        f:port: {}
+                                        f:scheme: {}
+                                    f:initialDelaySeconds: {}
+                                    f:periodSeconds: {}
+                                    f:successThreshold: {}
+                                    f:timeoutSeconds: {}
+                                f:resources:
+                                    .: {}
+                                    f:limits:
+                                        .: {}
+                                        f:cpu: {}
+                                        f:memory: {}
+                                        f:nvidia.com/gpu: {}
+                                    f:requests:
+                                        .: {}
+                                        f:cpu: {}
+                                        f:memory: {}
+                                        f:nvidia.com/gpu: {}
+                                f:stdin: {}
+                                f:terminationMessagePath: {}
+                                f:terminationMessagePolicy: {}
+                                f:tty: {}
+                                f:volumeMounts:
+                                    .: {}
+                                    k:{"mountPath":"/dev/shm"}:
+                                        .: {}
+                                        f:mountPath: {}
+                                        f:name: {}
+                                    k:{"mountPath":"/root/.cache/huggingface"}:
+                                        .: {}
+                                        f:mountPath: {}
+                                        f:name: {}
+                        f:dnsPolicy: {}
+                        f:restartPolicy: {}
+                        f:schedulerName: {}
+                        f:securityContext: {}
+                        f:terminationGracePeriodSeconds: {}
+                        f:volumes:
+                            .: {}
+                            k:{"name":"dshm"}:
+                                .: {}
+                                f:emptyDir:
+                                    .: {}
+                                    f:medium: {}
+                                    f:sizeLimit: {}
+                                f:name: {}
+                            k:{"name":"hf-cache"}:
+                                .: {}
+                                f:hostPath:
+                                    .: {}
+                                    f:path: {}
+                                    f:type: {}
+                                f:name: {}
+        manager: OpenAPI-Generator
+        operation: Update
+        time: '2026-09-29T20:40:42Z'
+    -   apiVersion: batch/v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:status:
+                f:active: {}
+                f:ready: {}
+                f:startTime: {}
+                f:terminating: {}
+                f:uncountedTerminatedPods: {}
+        manager: kube-controller-manager
+        operation: Update
+        subresource: status
+        time: '2026-09-29T20:43:10Z'
+    name: vllm-server-smollm-1o7b
+    namespace: default
+    resourceVersion: '17554139'
+    uid: 811dad5b-cc4d-4a89-8741-8122af946ef3
+spec:
+    backoffLimit: 6
+    completionMode: NonIndexed
+    manualSelector: false
+    parallelism: 1
+    podReplacementPolicy: TerminatingOrFailed
+    selector:
+        matchLabels:
+            batch.kubernetes.io/controller-uid: 811dad5b-cc4d-4a89-8741-8122af946ef3
+    suspend: false
+    template:
+        metadata:
+            labels:
+                batch.kubernetes.io/controller-uid: 811dad5b-cc4d-4a89-8741-8122af946ef3
+                batch.kubernetes.io/job-name: vllm-server-smollm-1o7b
+                controller-uid: 811dad5b-cc4d-4a89-8741-8122af946ef3
+                job-name: vllm-server-smollm-1o7b
+        spec:
+            containers:
+            -   args:
+                - --model
+                - $(MODEL_NAME)
+                - --tensor-parallel-size
+                - '1'
+                - --max-model-len
+                - '1024'
+                - --async-scheduling
+                - --limit-mm-per-prompt.video
+                - '0'
+                - --no-enable-prefix-caching
+                - --cpu-offload-gb
+                - '0.2'
+                - --gpu_memory_utilization
+                - '0.9'
+                env:
+                -   name: MODEL_NAME
+                    value: RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16
+                -   name: HF_TOKEN
+                    valueFrom:
+                        secretKeyRef:
+                            key: HF_TOKEN
+                            name: hf-token-secret
+                -   name: HF_HOME
+                    value: /root/.cache/huggingface/
+                image: docker.io/vllm/vllm-openai:latest
+                imagePullPolicy: Never
+                name: vllm-server-smollm-1o7b
+                ports:
+                -   containerPort: 8000
+                    name: smollm-1o7b
+                    protocol: TCP
+                readinessProbe:
+                    failureThreshold: 90
+                    httpGet:
+                        path: /health
+                        port: 8000
+                        scheme: HTTP
+                    initialDelaySeconds: 20
+                    periodSeconds: 10
+                    successThreshold: 1
+                    timeoutSeconds: 1
+                resources:
+                    limits:
+                        cpu: '5'
+                        memory: 16Gi
+                        nvidia.com/gpu: '1'
+                    requests:
+                        cpu: '5'
+                        memory: 16Gi
+                        nvidia.com/gpu: '1'
+                stdin: true
+                terminationMessagePath: /dev/termination-log
+                terminationMessagePolicy: File
+                tty: true
+                volumeMounts:
+                -   mountPath: /root/.cache/huggingface
+                    name: hf-cache
+                -   mountPath: /dev/shm
+                    name: dshm
+            dnsPolicy: ClusterFirst
+            restartPolicy: Never
+            schedulerName: default-scheduler
+            securityContext: {}
+            terminationGracePeriodSeconds: 30
+            volumes:
+            -   hostPath:
+                    path: /home/ubuntu/.cache/huggingface
+                    type: Directory
+                name: hf-cache
+            -   emptyDir:
+                    medium: Memory
+                    sizeLimit: 16Gi
+                name: dshm
+status:
+    active: 1
+    ready: 1
+    startTime: '2026-09-29T20:40:42Z'
+    terminating: 0
+    uncountedTerminatedPods: {}
+

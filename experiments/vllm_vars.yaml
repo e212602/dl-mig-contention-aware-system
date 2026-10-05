@@ -1,0 +1,24 @@
+models_list:
+  - "RedHatAI/gemma-2-2b-it-quantized.w4a16"
+  - "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16"
+  - "Qwen/Qwen2.5-1.5B-Instruct"
+  - "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8"
+
+cpu_offload_by_model:
+  "RedHatAI/gemma-2-2b-it-quantized.w4a16": "0.1"
+  "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16": "0.2"
+  "Qwen/Qwen2.5-1.5B-Instruct": "0.2"
+  "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8": "0.2"
+
+# Dictionary mapping each model to its specific URL
+model_urls_server:
+  "RedHatAI/gemma-2-2b-it-quantized.w4a16": "http://localhost:80/gemma"
+  "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16": "http://localhost:80/smollm"
+  "Qwen/Qwen2.5-1.5B-Instruct": "http://localhost:80/qwen3"
+  "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8": "http://localhost:80/qwen25"
+
+model_urls:
+  "RedHatAI/gemma-2-2b-it-quantized.w4a16": "http://localhost:8080/gemma"
+  "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16": "http://localhost:8080/smollm"
+  "Qwen/Qwen2.5-1.5B-Instruct": "http://localhost:8080/qwen3"
+  "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8": "http://localhost:8080/qwen25"

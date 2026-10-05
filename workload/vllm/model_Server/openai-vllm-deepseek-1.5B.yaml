@@ -1,0 +1,110 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vllm-server-deepseek-1o5b
+  labels:
+    app.kubernetes.io/name: vllm-server-deepseek-1o5b
+spec:
+  parallelism: 1
+  template:
+    spec:
+      containers:
+      - name: vllm-server-deepseek-1o5b
+        # command: ["/bin/bash"]
+        args: 
+        - "--model"
+        - "$(MODEL_NAME)"
+        - "--tensor-parallel-size"
+        - "1"
+        - "--max-model-len"
+        - "32768"
+        - "--async-scheduling"
+        - "--limit-mm-per-prompt.video"
+        - "0"   
+        - "--no-enable-prefix-caching"
+        - "--cpu-offload-gb" 
+        - "1"
+        # - "--kv-offloading-size"
+        # - "0"
+        - "--gpu_memory_utilization"
+        - "0.9"
+        env:
+        - name: MODEL_NAME
+          value: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token-secret
+              key: HF_TOKEN
+        - name: HF_HOME
+          value: "/root/.cache/huggingface/"
+        image: docker.io/vllm/vllm-openai:latest
+        imagePullPolicy: Never
+        resources:
+          requests:
+            cpu: '10'
+            memory: 16Gi
+            nvidia.com/gpu: 1
+          limits:
+            cpu: '10'
+            memory: 16Gi
+            nvidia.com/gpu: 1
+        stdin: true
+        tty: true
+        volumeMounts:
+        - mountPath: /root/.cache/huggingface
+          name: hf-cache
+        - mountPath: /dev/shm
+          name: dshm
+        ports:
+          - containerPort: 8000
+            name: deepseek-1o5b
+      restartPolicy: Never
+      volumes:
+      - name: hf-cache
+        hostPath:
+          path: /home/ubuntu/.cache/huggingface
+          type: Directory
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 16Gi   # see below
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service-deepseek-1o5b
+spec:
+  selector:
+    job-name: vllm-server-deepseek-1o5b
+  ports:
+  - name: deepseek-1o5b
+    protocol: TCP
+    port: 8000
+    targetPort: deepseek-1o5b
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vllm-ingress-deepseek-1o5b
+  annotations:
+    # Specifies HAProxy Ingress as the controller
+    haproxy-ingress.github.io/ssl-redirect: "false"
+    # Optional: Increase timeout for long-running vLLM generation requests (in seconds)
+    haproxy-ingress.github.io/timeout-connect: "15s"
+    haproxy-ingress.github.io/timeout-server: "600s"
+    haproxy-ingress.github.io/timeout-client: "600s"
+    haproxy-ingress.github.io/rewrite-target: /
+spec:
+  ingressClassName: haproxy
+  rules:
+  - host: localhost # Replace with your domain or IP host
+    http:
+      paths:
+      - path: /deepseek
+        pathType: Prefix
+        backend:
+          service:
+            name: vllm-service-deepseek-1o5b
+            port:
+              number: 8000
