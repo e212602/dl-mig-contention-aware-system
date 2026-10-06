@@ -1,0 +1,49 @@
+{
+    "burst_ticks": 0,
+    "continue_on_failure": false,
+    "cpu_offload_by_model": {
+        "Qwen/Qwen2.5-1.5B-Instruct": "0.2",
+        "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8": "0.2",
+        "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16": "0.2",
+        "RedHatAI/gemma-2-2b-it-quantized.w4a16": "0.1"
+    },
+    "cpu_offload_enabled": true,
+    "gb_rate_values": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32
+    ],
+    "git_commit": "a5ed878eb34cf7a3cd40d9fbf534291c736df61f",
+    "include_baseline": true,
+    "libcuda_log_level": "2",
+    "models": [
+        "RedHatAI/gemma-2-2b-it-quantized.w4a16",
+        "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16",
+        "Qwen/Qwen2.5-1.5B-Instruct",
+        "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8"
+    ],
+    "rate_control_worker_id": 1,
+    "request_count": [
+        "200"
+    ],
+    "request_rate": [
+        "10"
+    ],
+    "run_id": "vllm_pcie_bw_sweep_cpuoffload-on_20261006T004643",
+    "timestamp": "20261006T004643",
+    "vllm_extra_args": [
+        "--tensor-parallel-size",
+        "1",
+        "--max-model-len",
+        "1024",
+        "--async-scheduling",
+        "--limit-mm-per-prompt.video",
+        "0",
+        "--no-enable-prefix-caching",
+        "--gpu_memory_utilization",
+        "0.9"
+    ]
+}

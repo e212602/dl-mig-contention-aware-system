@@ -1,0 +1,10 @@
+[
+    {
+        "end": "2026-10-06T08:21:18Z",
+        "end_unix": 1791274878,
+        "file": "/tmp/vllm_pcie_bw_sweep_cpuoffload-on_20261006T095632/RedHatAI_gemma-2-2b-it-quantized.w4a16/gb_rate-2/artifacts/gb_rate-2/RedHatAI_gemma-2-2b-it-quantized.w4a16_rps10_n200/gb_rate-2_raw.jsonl",
+        "requests": 200,
+        "start": "2026-10-06T08:17:55Z",
+        "start_unix": 1791274675
+    }
+]

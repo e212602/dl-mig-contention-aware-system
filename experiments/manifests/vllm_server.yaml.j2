@@ -1,0 +1,158 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ job_name }}
+  labels:
+    app.kubernetes.io/name: {{ job_name }}
+    app.kubernetes.io/part-of: vllm-pcie-sweep
+    pcie-bw-control: "{{ bw_control }}"
+spec:
+  parallelism: 1
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: vllm-pcie-sweep
+        pcie-bw-control: "{{ bw_control }}"
+    spec:
+      restartPolicy: Never
+{% if bw_control == 'on' %}
+      initContainers:
+        # The pod stays Pending (Init) until the controller has initialised
+        # the shared region and published the ready file.
+        - name: wait-for-rate-control
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for /tmp/rate-control/{{ ready_file_name }} ..."
+              until [ -f /tmp/rate-control/{{ ready_file_name }} ]; do
+                sleep 1
+              done
+              echo "Rate control is ready."
+          volumeMounts:
+            - mountPath: /tmp/rate-control
+              name: rate-control
+{% endif %}
+      containers:
+        - name: {{ job_name }}
+          image: docker.io/vllm/vllm-openai:v0.28.0-x86_64
+          imagePullPolicy: Never
+          args: {{ (['--model', '$(MODEL_NAME)'] + (vllm_extra_args | map('string') | list) + ['--cpu-offload-gb', cpu_offload_target | string]) | to_json }}
+          env:
+            - name: MODEL_NAME
+              value: {{ model | to_json }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token-secret
+                  key: HF_TOKEN
+            - name: HF_HOME
+              value: "/root/.cache/huggingface/"
+{% if bw_control == 'on' %}
+            - name: LD_PRELOAD
+              value: "/mnt/libvgpu.so"
+            - name: SHARED_REGION_CACHE_ENV
+              value: "/tmp/rate-control/rate-control-ops-{{ rate_control_worker_id }}"
+{% endif %}
+            - name: LIBCUDA_LOG_LEVEL
+              value: {{ libcuda_log_level | string | to_json }}
+          resources:
+            requests:
+              cpu: "5"
+              memory: 16Gi
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "5"
+              memory: 16Gi
+              nvidia.com/gpu: 1
+          stdin: true
+          tty: true
+          volumeMounts:
+            - mountPath: /root/.cache/huggingface
+              name: hf-cache
+            - mountPath: /dev/shm
+              name: dshm
+            - mountPath: /mnt
+              name: vgpu
+              readOnly: true
+{% if bw_control == 'on' %}
+            - mountPath: /tmp/rate-control
+              name: rate-control
+              readOnly: false
+{% endif %}
+          ports:
+            - containerPort: 8000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 90
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: /home/ubuntu/.cache/huggingface
+            type: Directory
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+        - name: vgpu
+          hostPath:
+            path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/HAMi-core/build
+            type: Directory
+{% if bw_control == 'on' %}
+        - name: rate-control
+          hostPath:
+            path: {{ rate_control_dir }}
+            type: DirectoryOrCreate
+{% endif %}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ service_name }}
+  labels:
+    app.kubernetes.io/part-of: vllm-pcie-sweep
+spec:
+  selector:
+    job-name: {{ job_name }}
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ ingress_name }}
+  labels:
+    app.kubernetes.io/part-of: vllm-pcie-sweep
+  annotations:
+    haproxy-ingress.github.io/ssl-redirect: "false"
+    haproxy-ingress.github.io/timeout-connect: "15s"
+    haproxy-ingress.github.io/timeout-server: "1000s"
+    haproxy-ingress.github.io/timeout-client: "1000s"
+    haproxy-ingress.github.io/rewrite-target: /
+    # Disable response buffering so SSE/chunked streams flush immediately.
+    haproxy-ingress.github.io/response-buffering: "false"
+    # Avoid idle timeouts during a slow time-to-first-token.
+    haproxy-ingress.github.io/timeout-queue: "1000s"
+spec:
+  ingressClassName: haproxy
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: {{ url_path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ service_name }}
+                port:
+                  number: 8000

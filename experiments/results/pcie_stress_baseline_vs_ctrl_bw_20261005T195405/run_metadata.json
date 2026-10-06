@@ -1,0 +1,30 @@
+{
+    "experiment_name": "pcie_stress_baseline_vs_ctrl_bw",
+    "git_commit": "a5ed878eb34cf7a3cd40d9fbf534291c736df61f",
+    "parameters": {
+        "baseline_workers": 1,
+        "bw_control": [
+            "on",
+            "on",
+            "on",
+            "off"
+        ],
+        "controlled_workers": 3,
+        "gb_rate": [
+            1,
+            2,
+            4,
+            8,
+            16,
+            32
+        ],
+        "worker_number": [
+            1,
+            2,
+            3,
+            4
+        ]
+    },
+    "run_id": "pcie_stress_baseline_vs_ctrl_bw_20261005T195405",
+    "timestamp": "20261005T195405"
+}

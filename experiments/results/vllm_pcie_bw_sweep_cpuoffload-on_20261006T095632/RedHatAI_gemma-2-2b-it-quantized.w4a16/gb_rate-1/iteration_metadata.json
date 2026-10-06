@@ -1,0 +1,11 @@
+{
+    "bw_control": "on",
+    "cpu_offload_gb": "0.1",
+    "gb_rate": 1,
+    "job_name": "vllm-server-gemma",
+    "model": "RedHatAI/gemma-2-2b-it-quantized.w4a16",
+    "run_id": "vllm_pcie_bw_sweep_cpuoffload-on_20261006T095632",
+    "setting": "gb_rate-1",
+    "started_at": "2026-10-06T08:06:02Z",
+    "url": "http://localhost:8080/gemma"
+}

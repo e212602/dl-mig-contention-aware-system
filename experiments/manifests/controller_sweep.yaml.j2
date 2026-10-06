@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ controller_pod_name }}
+  labels:
+    app.kubernetes.io/part-of: vllm-pcie-sweep
+spec:
+  restartPolicy: Never
+  containers:
+    - name: controller
+      image: e8113/controller:latest
+      imagePullPolicy: Never
+      env:
+        - name: GB_RATE
+          value: "{{ gb_rate }}"
+        - name: WORKER_IDS
+          value: "{{ rate_control_worker_id }}"
+        - name: READY_FILE
+          value: "/tmp/rate-control/{{ ready_file_name }}"
+        - name: BURST_TICKS
+          value: "{{ burst_ticks }}"
+        - name: SCHEDULER_LOG
+          value: "/tmp/results/{{ iter_rel }}/scheduler.csv"
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      volumeMounts:
+        - mountPath: /tmp/rate-control
+          name: rate-control
+          readOnly: false
+        - mountPath: /tmp/results
+          name: results
+          readOnly: false
+  volumes:
+    - name: rate-control
+      hostPath:
+        path: {{ rate_control_dir }}
+        type: DirectoryOrCreate
+    - name: results
+      hostPath:
+        path: {{ results_root }}
+        type: DirectoryOrCreate

@@ -1,9 +1,10 @@
 ---
-# PCIe stress comparison: one bandwidth-controlled worker and one un-controlled
-# worker run concurrently for each controller GB_RATE setting.
+# PCIe stress comparison: three bandwidth-controlled workers (1-3) and one
+# un-controlled baseline worker (4) run concurrently for each controller
+# GB_RATE setting (GB_RATE is a per-worker cap).
 #
 # Required environment: SERVER_ID (inventory host for the Kubernetes server)
-# Requires manifests/controller_template.yaml and manifests/pice_stress_template.yaml.
+# Requires manifests/controller_template.yaml.j2 and manifests/pcie_stress_job.yaml.j2.
 # Results: ./results/pcie_stress_baseline_vs_ctrl_bw_<timestamp>/
 
 - name: Prepare PCIe bandwidth comparison run
@@ -32,8 +33,13 @@
           - server_host | length > 0
           - gb_rate_values | length > 0
           - pcie_workers | length == 4
-          - pcie_workers | map(attribute='worker_number') | unique | length == 2
-        fail_msg: "Set SERVER_ID and configure two workers with unique worker numbers."
+          - (pcie_workers | map(attribute='worker_number') | unique | list | length) == (pcie_workers | length)
+          - (pcie_workers | selectattr('bw_control', 'equalto', 'on') | list | length) == 3
+          - (pcie_workers | selectattr('bw_control', 'equalto', 'off') | list | length) == 1
+          # The controller maps rate-control-ops-<id> for each controlled worker and the
+          # init containers wait on ready-ops-1, so controlled workers must include id 1.
+          - 1 in (pcie_workers | selectattr('bw_control', 'equalto', 'on') | map(attribute='worker_number') | list)
+        fail_msg: "Set SERVER_ID and configure 4 workers (3 with bw_control=on including worker 1, 1 with bw_control=off) with unique worker numbers."
 
     - name: Publish experiment settings for the server play
       ansible.builtin.set_fact:
@@ -89,11 +95,15 @@
     k8s_namespace: default
     rate_control_dir: /home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control
     pcie_results_dir: /tmp/results
-    controller_template_file: "{{ playbook_dir }}/manifests/controller_template.yaml"
-    ops_template_file: "{{ playbook_dir }}/manifests/pice_stress_template.yaml"
+    controller_template_file: "{{ playbook_dir }}/manifests/controller_template.yaml.j2"
+    ops_template_file: "{{ playbook_dir }}/manifests/pcie_stress_job.yaml.j2"
     local_run_dir: "{{ hostvars['localhost']['run_dir'] }}"
     pcie_workers: "{{ hostvars['localhost']['pcie_experiment_workers'] }}"
     gb_rate_values: "{{ hostvars['localhost']['pcie_experiment_gb_rates'] }}"
+    # Passed to the controller as WORKER_IDS (e.g. "1,2,3")
+    controlled_worker_ids: >-
+      {{ pcie_workers | selectattr('bw_control', 'equalto', 'on')
+         | map(attribute='worker_number') | join(',') }}
 
   tasks:
     - name: Run each GB_RATE with a clean server state

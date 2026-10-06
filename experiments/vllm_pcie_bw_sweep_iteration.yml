@@ -1,0 +1,521 @@
+---
+# Included once per (model, setting); loop vars set by the caller: model, setting.
+# setting is either 'baseline' (no LD_PRELOAD, no controller) or a GB_RATE.
+# Server-side tasks are delegated to {{ server_host }}.
+
+- name: Run one (model, setting) iteration
+  vars:
+    is_baseline: "{{ setting | string == 'baseline' }}"
+    bw_control: "{{ 'off' if is_baseline | bool else 'on' }}"
+    setting_name: "{{ 'baseline' if is_baseline | bool else 'gb_rate-' ~ setting }}"
+    gb_rate: "{{ setting }}"
+    model_tag: "{{ model | replace('/', '_') }}"
+    # /gemma, /smollm, ... from model_urls_server -> short unique name
+    model_short: "{{ model_urls_server[model] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+    url_path: "/{{ model_short }}"
+    job_name: "{{ vllm_job_prefix }}{{ model_short }}"
+    service_name: "vllm-service-{{ model_short }}"
+    ingress_name: "vllm-ingress-{{ model_short }}"
+    cpu_offload_target: "{{ cpu_offload_by_model[model] if cpu_offload_enabled | bool else cpu_offload_default }}"
+    # --- per-iteration locations ---
+    iter_rel: "{{ run_id }}/{{ model_tag }}/{{ setting_name }}"
+    iter_local_dir: "{{ local_run_dir }}/{{ model_tag }}/{{ setting_name }}"
+    iter_client_dir: "{{ client_run_dir }}/{{ model_tag }}/{{ setting_name }}"
+    iter_metrics_dir: "/tmp/{{ run_id }}_metrics/{{ model_tag }}/{{ setting_name }}"
+    server_results_dir: "{{ results_root }}/{{ iter_rel }}"
+
+  block:
+    # =========================================================================
+    # 1. Prepare the remote machine
+    # =========================================================================
+    - name: Create local directory for this iteration
+      ansible.builtin.file:
+        path: "{{ iter_local_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+
+    - name: Record iteration start
+      ansible.builtin.set_fact:
+        iteration_started_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+
+    - name: Write iteration metadata
+      ansible.builtin.copy:
+        dest: "{{ iter_local_dir }}/iteration_metadata.json"
+        content: "{{ iteration_metadata | to_nice_json }}"
+        mode: '0644'
+      vars:
+        iteration_metadata:
+          run_id: "{{ run_id }}"
+          model: "{{ model }}"
+          setting: "{{ setting_name }}"
+          bw_control: "{{ bw_control }}"
+          gb_rate: "{{ gb_rate if bw_control == 'on' else none }}"
+          cpu_offload_gb: "{{ cpu_offload_target }}"
+          job_name: "{{ job_name }}"
+          url: "{{ model_urls[model] }}"
+          started_at: "{{ iteration_started_at }}"
+      delegate_to: localhost
+
+    - name: Remove the controller pod
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        name: "{{ controller_pod_name }}"
+        namespace: "{{ k8s_namespace }}"
+        wait: true
+        wait_timeout: 120
+      delegate_to: "{{ server_host }}"
+
+    - name: List existing Jobs
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: Job
+        namespace: "{{ k8s_namespace }}"
+      register: existing_jobs
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove existing Jobs (and their pods)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: "{{ item }}"
+        namespace: "{{ k8s_namespace }}"
+        delete_options:
+          propagationPolicy: Foreground
+        wait: true
+        wait_timeout: 300
+      loop: "{{ existing_jobs.resources | map(attribute='metadata.name') | select('match', job_cleanup_regex) | list }}"
+      delegate_to: "{{ server_host }}"
+
+    # Pods orphaned by an earlier non-cascading delete would still hold the GPU.
+    - name: List leftover Job pods
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+      register: existing_pods
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove leftover Job pods
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        name: "{{ item }}"
+        namespace: "{{ k8s_namespace }}"
+        wait: true
+        wait_timeout: 300
+      loop: >-
+        {{ existing_pods.resources
+           | selectattr('metadata.labels.job-name', 'defined')
+           | map(attribute='metadata.name')
+           | select('match', job_cleanup_regex) | list }}
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove Services and Ingresses left by a previous iteration
+      kubernetes.core.k8s:
+        state: absent
+        api_version: "{{ item.api_version }}"
+        kind: "{{ item.kind }}"
+        namespace: "{{ k8s_namespace }}"
+        label_selectors:
+          - app.kubernetes.io/part-of=vllm-pcie-sweep
+      loop:
+        - { api_version: v1, kind: Service }
+        - { api_version: networking.k8s.io/v1, kind: Ingress }
+      loop_control:
+        label: "{{ item.kind }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Delete all files in the rate-control directory
+      ansible.builtin.file:
+        path: "{{ rate_control_dir }}"
+        state: absent
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Recreate the empty rate-control directory
+      ansible.builtin.file:
+        path: "{{ rate_control_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: "{{ server_host }}"
+
+    - name: Create the results directory for this iteration on the server
+      ansible.builtin.file:
+        path: "{{ server_results_dir }}"
+        state: directory
+        mode: '0755'
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Create the artifact directory for this iteration on the client
+      ansible.builtin.file:
+        path: "{{ iter_client_dir }}"
+        state: directory
+        mode: '0755'
+
+    # =========================================================================
+    # 2. vLLM server: Pending (init container) until rate control is ready
+    # =========================================================================
+    - name: Create the vLLM server (Job, Service, Ingress)
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        definition: "{{ lookup('ansible.builtin.template', vllm_template_file) | from_yaml_all | list }}"
+      delegate_to: "{{ server_host }}"
+
+    # =========================================================================
+    # 3. Controller (skipped for the baseline, which runs without rate control)
+    # =========================================================================
+    - name: Create the PCIe bandwidth controller
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        definition: "{{ lookup('ansible.builtin.template', controller_template_file) | from_yaml }}"
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 300
+      when: bw_control == 'on'
+      register: controller_pod
+      delegate_to: "{{ server_host }}"
+
+    - name: Wait for the controller to publish the ready file
+      ansible.builtin.stat:
+        path: "{{ rate_control_dir }}/{{ ready_file_name }}"
+      register: ready_stat
+      until: ready_stat.stat.exists
+      retries: 30
+      delay: 2
+      when: bw_control == 'on'
+      delegate_to: "{{ server_host }}"
+
+    # /v1/models proves the model is loaded and served under the expected name.
+    - name: Wait until the vLLM server serves its model
+      ansible.builtin.uri:
+        url: "{{ model_urls_server[model] }}/v1/models"
+        status_code: 200
+        return_content: true
+        timeout: 5
+      register: vllm_ready
+      until:
+        - vllm_ready.status is defined
+        - vllm_ready.status == 200
+        - vllm_ready.json is defined
+        - model in (vllm_ready.json.data | map(attribute='id') | list)
+      retries: "{{ server_ready_retries }}"
+      delay: 10
+      delegate_to: "{{ server_host }}"
+
+    - name: Fetch Jobs (final state)
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: Job
+        namespace: "{{ k8s_namespace }}"
+      register: k8s_jobs_final
+      delegate_to: "{{ server_host }}"
+
+    - name: Fetch Pods (final state, includes image digests and node)
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+      register: k8s_pods_final
+      delegate_to: "{{ server_host }}"
+
+    - name: Save final Job manifests
+      ansible.builtin.copy:
+        content: |
+          {% for item in k8s_jobs_final.resources %}
+          ---
+          {{ item | to_nice_yaml }}
+          {% endfor %}
+        dest: "{{ iter_local_dir }}/server_manifests.yaml"
+        mode: '0644'
+      delegate_to: localhost
+
+    - name: Save final Pod state
+      ansible.builtin.copy:
+        content: |
+          {% for item in k8s_pods_final.resources %}
+          ---
+          {{ item | to_nice_yaml }}
+          {% endfor %}
+        dest: "{{ iter_local_dir }}/server_pods.yaml"
+        mode: '0644'
+      delegate_to: localhost
+
+    - name: Save controller pod manifest
+      ansible.builtin.copy:
+        content: "{{ controller_pod.result | to_nice_yaml }}"
+        dest: "{{ iter_local_dir }}/controller_pod.yaml"
+        mode: '0644'
+      when: bw_control == 'on'
+      delegate_to: localhost
+
+    # =========================================================================
+    # 4. Benchmark on the client
+    # =========================================================================
+    - name: Verify tunnel and model are reachable from the client
+      ansible.builtin.uri:
+        url: "{{ model_urls[model] }}/v1/models"
+        status_code: 200
+        return_content: true
+        timeout: 5
+      register: client_check
+      until:
+        - client_check.status is defined
+        - client_check.status == 200
+        - client_check.json is defined
+        - model in (client_check.json.data | map(attribute='id') | list)
+      retries: 3
+      delay: 2
+
+    - name: Warm up the model (not measured)
+      ansible.builtin.uri:
+        url: "{{ model_urls[model] }}/v1/chat/completions"
+        method: POST
+        body_format: json
+        body:
+          model: "{{ model }}"
+          messages:
+            - role: user
+              content: "Say hello."
+          max_tokens: 32
+        status_code: 200
+        timeout: 120
+      loop: "{{ range(warmup_requests | int) | list }}"
+      loop_control:
+        label: "warm-up #{{ item }}"
+
+    - name: Generate the benchmark script
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd {{ iter_client_dir }}
+
+          {% for rps in request_rate %}
+          {% for count in request_count %}
+          "{{ aiperf_bin }}" profile \
+            --model "{{ model }}" \
+            --url "{{ model_urls[model] }}" \
+            --endpoint-type chat \
+            --streaming \
+            --request-rate {{ rps }} \
+            --request-count {{ count }} \
+            --tokenizer "{{ model }}" \
+            {{ aiperf_artifact_flag }} "{{ iter_client_dir }}/artifacts/{{ setting_name }}/{{ model_tag }}_rps{{ rps }}_n{{ count }}" \
+            --profile-export-prefix "{{ setting_name }}" \
+            --export-level raw
+
+          {% endfor %}
+          {% endfor %}
+        dest: "{{ iter_client_dir }}/run_benchmark.sh"
+        mode: '0755'
+
+    # =========================================================================
+    # 5. Wait until the benchmark finishes
+    # =========================================================================
+    - name: Run the benchmark ({{ setting_name }})
+      ansible.builtin.command:
+        cmd: "{{ iter_client_dir }}/run_benchmark.sh"
+      async: "{{ benchmark_timeout_seconds }}"
+      poll: 30
+
+    # The limiter must have covered the whole run: still Running, never restarted.
+    - name: Confirm the controller was running throughout
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: "{{ controller_pod_name }}"
+        namespace: "{{ k8s_namespace }}"
+      register: controller_after
+      failed_when: >-
+        controller_after.resources | length == 0
+        or controller_after.resources[0].status.phase != 'Running'
+        or (controller_after.resources[0].status.containerStatuses[0].restartCount | default(0) | int) > 0
+      when: bw_control == 'on'
+      delegate_to: "{{ server_host }}"
+
+    # Start/end time extraction + Prometheus/DCGM telemetry for this iteration.
+    - name: Collect system metrics for this iteration
+      ansible.builtin.include_tasks: collect_metrics_sweep.yml
+
+  rescue:
+    - name: Create local directory for the failure note
+      ansible.builtin.file:
+        path: "{{ iter_local_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+
+    - name: Record the failed iteration
+      ansible.builtin.copy:
+        dest: "{{ iter_local_dir }}/FAILED.txt"
+        content: |
+          model:   {{ model }}
+          setting: {{ setting_name }}
+          task:    {{ ansible_failed_task.name | default('unknown') }}
+          message: {{ ansible_failed_result.msg | default('see ansible output') }}
+        mode: '0644'
+      delegate_to: localhost
+
+    - name: Stop the sweep on failure
+      ansible.builtin.fail:
+        msg: >-
+          {{ model }} / {{ setting_name }} failed at task
+          "{{ ansible_failed_task.name | default('unknown') }}" (partial results kept in {{ iter_local_dir }}).
+          Set continue_on_failure: true to carry on with the next iteration.
+      when: not continue_on_failure | bool
+
+  always:
+    # --- stop everything this iteration started ---
+    - name: Remove the controller pod
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        name: "{{ controller_pod_name }}"
+        namespace: "{{ k8s_namespace }}"
+        wait: true
+        wait_timeout: 120
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove the vLLM Job (and its pods)
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: "{{ job_name }}"
+        namespace: "{{ k8s_namespace }}"
+        delete_options:
+          propagationPolicy: Foreground
+        wait: true
+        wait_timeout: 300
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove orphaned vLLM pods
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+        label_selectors:
+          - "job-name={{ job_name }}"
+        wait: true
+        wait_timeout: 300
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove the vLLM Service and Ingress
+      kubernetes.core.k8s:
+        state: absent
+        api_version: "{{ item.api_version }}"
+        kind: "{{ item.kind }}"
+        name: "{{ item.name }}"
+        namespace: "{{ k8s_namespace }}"
+      loop:
+        - { api_version: v1, kind: Service, name: "{{ service_name }}" }
+        - { api_version: networking.k8s.io/v1, kind: Ingress, name: "{{ ingress_name }}" }
+      loop_control:
+        label: "{{ item.kind }}/{{ item.name }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Stop Prometheus port-forward
+      ansible.builtin.command:
+        argv: [pkill, -f, "kubectl port-forward.*{{ prometheus_local_port }}:{{ prometheus_service_port }}"]
+      delegate_to: "{{ server_host }}"
+      failed_when: false
+      changed_when: false
+
+    # --- Prometheus/DCGM telemetry (server) ---
+    - name: Check for collected metrics
+      ansible.builtin.stat:
+        path: "{{ iter_metrics_dir }}"
+      delegate_to: "{{ server_host }}"
+      register: metrics_stat
+
+    - name: Compress metrics
+      ansible.builtin.command:
+        cmd: "tar -czf {{ iter_metrics_dir }}.tar.gz -C {{ iter_metrics_dir }} --exclude=scrapper ."
+      delegate_to: "{{ server_host }}"
+      when: metrics_stat.stat.exists
+
+    - name: Transfer metrics to the controller
+      ansible.builtin.fetch:
+        src: "{{ iter_metrics_dir }}.tar.gz"
+        dest: "{{ iter_local_dir }}/system_metrics.tar.gz"
+        flat: true
+      delegate_to: "{{ server_host }}"
+      when: metrics_stat.stat.exists
+
+    - name: Delete metrics from the server
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ iter_metrics_dir }}"
+        - "{{ iter_metrics_dir }}.tar.gz"
+      delegate_to: "{{ server_host }}"
+
+    # --- /tmp/results on the server: scheduler logs ---
+    - name: Check for server results
+      ansible.builtin.stat:
+        path: "{{ server_results_dir }}"
+      delegate_to: "{{ server_host }}"
+      become: true
+      register: server_results_stat
+
+    - name: Compress server results
+      ansible.builtin.command:
+        cmd: "tar -czf {{ server_results_dir }}.tar.gz -C {{ server_results_dir }} ."
+      delegate_to: "{{ server_host }}"
+      become: true
+      when: server_results_stat.stat.exists
+
+    - name: Transfer server results to the controller
+      ansible.builtin.fetch:
+        src: "{{ server_results_dir }}.tar.gz"
+        dest: "{{ iter_local_dir }}/server_results.tar.gz"
+        flat: true
+      delegate_to: "{{ server_host }}"
+      become: true
+      when: server_results_stat.stat.exists
+
+    - name: Delete server results of this iteration
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ server_results_dir }}"
+        - "{{ server_results_dir }}.tar.gz"
+      delegate_to: "{{ server_host }}"
+      become: true
+
+    # --- aiperf artifacts on the client (partial results are kept on failure) ---
+    - name: Check for artifacts
+      ansible.builtin.stat:
+        path: "{{ iter_client_dir }}/artifacts"
+      register: artifacts_stat
+
+    - name: Compress artifacts
+      ansible.builtin.command:
+        cmd: "tar -czf {{ iter_client_dir }}/artifacts.tar.gz -C {{ iter_client_dir }} artifacts"
+      when: artifacts_stat.stat.exists
+
+    - name: Transfer artifacts to the controller
+      ansible.builtin.fetch:
+        src: "{{ iter_client_dir }}/artifacts.tar.gz"
+        dest: "{{ iter_local_dir }}/artifacts.tar.gz"
+        flat: true
+      when: artifacts_stat.stat.exists
+
+    - name: Delete the client directory of this iteration
+      ansible.builtin.file:
+        path: "{{ iter_client_dir }}"
+        state: absent

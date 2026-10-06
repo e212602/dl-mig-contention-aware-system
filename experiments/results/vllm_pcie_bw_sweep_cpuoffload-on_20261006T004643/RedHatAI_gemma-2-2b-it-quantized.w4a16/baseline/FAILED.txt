@@ -1,0 +1,4 @@
+model:   RedHatAI/gemma-2-2b-it-quantized.w4a16
+setting: baseline
+task:    Create the vLLM server (Job, Service, Ingress)
+message: Task failed: Finalization of task args for 'kubernetes.core.k8s' failed: Error while resolving value for 'definition': The lookup plugin 'ansible.builtin.template' failed: the template file /home/p316289/Desktop/work/dl-mig-contention-aware-system/experiments/manifests/vllm_server.yaml.j2 could not be found for the lookup

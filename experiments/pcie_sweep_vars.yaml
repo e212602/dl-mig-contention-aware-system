@@ -1,0 +1,52 @@
+---
+# Settings for vllm_pcie_bw_sweep.yaml (models, URLs and CPU-offload values
+# stay in vllm_vars.yaml; request_rate/request_count stay in aiperf_vars.yaml).
+
+# PCIe limits to sweep (GB/s per controlled worker).
+gb_rate_values: [1, 2, 4, 8, 16, 32]
+
+# One extra run per model with no LD_PRELOAD and no controller.
+include_baseline: true
+
+# Controller bucket cap in ticks of refill (0 = unlimited, legacy behaviour).
+burst_ticks: 0
+
+# Id of the controlled worker. Everything is derived from it:
+#   region file : <rate_control_dir>/rate-control-ops-<id>
+#   ready file  : <rate_control_dir>/ready-ops-<id>
+#   controller  : WORKER_IDS=<id>, READY_FILE=.../ready-ops-<id>
+rate_control_worker_id: 1
+rate_control_dir: /home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control
+
+# Server-side directory that is mounted into the controller at /tmp/results.
+# Each iteration writes to <results_root>/<run_id>/<model>/<setting>/.
+results_root: /tmp/results
+
+# Jobs removed from the namespace before every iteration (regex on the Job
+# name). '.*' removes every Job; narrow it, e.g. '^vllm-server-', if the
+# namespace holds Jobs that must survive.
+job_cleanup_regex: '.*'
+
+vllm_job_prefix: vllm-server-
+libcuda_log_level: "2"
+
+# Used for --cpu-offload-gb when CPU_OFFLOAD_ENABLE is not "yes".
+cpu_offload_default: "0.0"
+
+# vLLM arguments after --model; --cpu-offload-gb is appended per model.
+# Keep every value a string.
+vllm_extra_args:
+  - "--tensor-parallel-size"
+  - "1"
+  - "--max-model-len"
+  - "1024"
+  - "--async-scheduling"
+  - "--limit-mm-per-prompt.video"
+  - "0"
+  - "--no-enable-prefix-caching"
+  - "--gpu_memory_utilization"
+  - "0.9"
+
+# true  : record the failure and move on to the next (model, setting)
+# false : stop the whole sweep at the first failed iteration
+continue_on_failure: false

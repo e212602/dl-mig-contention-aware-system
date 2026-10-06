@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ops-{{ worker_number }}
+  labels:
+    app: pcie-stress
+    worker-number: "{{ worker_number }}"
+    bw-control: "{{ bw_control }}"
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: pcie-stress
+        worker-number: "{{ worker_number }}"
+        bw-control: "{{ bw_control }}"
+    spec:
+      restartPolicy: Never
+      initContainers:
+        # One shared start barrier: the controller writes ready-ops-1 after all
+        # regions are initialised, releasing every worker (controlled or baseline).
+        - name: wait-for-controller
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for controller ready file..."
+              until [ -f /tmp/rate-control/ready-ops-1 ]; do
+                sleep 1
+              done
+              echo "Controller is ready."
+          volumeMounts:
+            - mountPath: /tmp/rate-control
+              name: rate-control
+      containers:
+        - name: ops
+          image: e8113/pcie_test
+          imagePullPolicy: Never
+          env:
+{% if bw_control == 'on' %}
+            # Controlled worker: preload the limiter and use its own region file.
+            - name: LD_PRELOAD
+              value: "/mnt/libvgpu.so"
+            - name: SHARED_REGION_CACHE_ENV
+              value: "/tmp/rate-control/rate-control-ops-{{ worker_number }}"
+{% endif %}
+            - name: LIBCUDA_LOG_LEVEL
+              value: "0"
+            - name: PCIE_RESULTS_CSV
+              value: "/tmp/results/ops-v2-worker-{{ worker_number }}-bw_control={{ bw_control }}.csv"
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - mountPath: /mnt
+              name: vgpu
+              readOnly: true
+            - mountPath: /tmp/rate-control
+              name: rate-control
+              readOnly: false
+            - mountPath: /tmp/results
+              name: results
+              readOnly: false
+      volumes:
+        - name: vgpu
+          hostPath:
+            path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/HAMi-core/build
+            type: Directory
+        - name: rate-control
+          hostPath:
+            path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control
+            type: DirectoryOrCreate
+        - name: results
+          hostPath:
+            path: /tmp/results
+            type: DirectoryOrCreate
