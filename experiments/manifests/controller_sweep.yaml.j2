@@ -17,6 +17,9 @@ spec:
           value: "{{ rate_control_worker_id }}"
         - name: READY_FILE
           value: "/tmp/rate-control/{{ ready_file_name }}"
+        # Limiter stays off (boot phase) until this file exists.
+        - name: GO_FILE
+          value: "/tmp/rate-control/{{ go_file_name }}"
         - name: BURST_TICKS
           value: "{{ burst_ticks }}"
         - name: SCHEDULER_LOG

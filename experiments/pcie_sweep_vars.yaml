@@ -45,7 +45,7 @@ vllm_extra_args:
   - "0"
   - "--no-enable-prefix-caching"
   - "--gpu_memory_utilization"
-  - "0.9"
+  - "0.85"
 
 # true  : record the failure and move on to the next (model, setting)
 # false : stop the whole sweep at the first failed iteration

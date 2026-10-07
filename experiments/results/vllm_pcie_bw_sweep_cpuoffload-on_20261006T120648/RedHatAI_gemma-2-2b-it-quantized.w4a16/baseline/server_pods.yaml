@@ -1,0 +1,442 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+    creationTimestamp: '2026-10-06T10:07:06Z'
+    finalizers:
+    - batch.kubernetes.io/job-tracking
+    generateName: vllm-server-gemma-
+    generation: 1
+    labels:
+        app.kubernetes.io/part-of: vllm-pcie-sweep
+        batch.kubernetes.io/controller-uid: 26534668-6f76-4223-8894-f73375211a37
+        batch.kubernetes.io/job-name: vllm-server-gemma
+        controller-uid: 26534668-6f76-4223-8894-f73375211a37
+        job-name: vllm-server-gemma
+        pcie-bw-control: 'off'
+    managedFields:
+    -   apiVersion: v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:metadata:
+                f:finalizers:
+                    .: {}
+                    v:"batch.kubernetes.io/job-tracking": {}
+                f:generateName: {}
+                f:labels:
+                    .: {}
+                    f:app.kubernetes.io/part-of: {}
+                    f:batch.kubernetes.io/controller-uid: {}
+                    f:batch.kubernetes.io/job-name: {}
+                    f:controller-uid: {}
+                    f:job-name: {}
+                    f:pcie-bw-control: {}
+                f:ownerReferences:
+                    .: {}
+                    k:{"uid":"26534668-6f76-4223-8894-f73375211a37"}: {}
+            f:spec:
+                f:containers:
+                    k:{"name":"vllm-server-gemma"}:
+                        .: {}
+                        f:args: {}
+                        f:env:
+                            .: {}
+                            k:{"name":"HF_HOME"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"HF_TOKEN"}:
+                                .: {}
+                                f:name: {}
+                                f:valueFrom:
+                                    .: {}
+                                    f:secretKeyRef: {}
+                            k:{"name":"LIBCUDA_LOG_LEVEL"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"MODEL_NAME"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                        f:image: {}
+                        f:imagePullPolicy: {}
+                        f:name: {}
+                        f:ports:
+                            .: {}
+                            k:{"containerPort":8000,"protocol":"TCP"}:
+                                .: {}
+                                f:containerPort: {}
+                                f:name: {}
+                                f:protocol: {}
+                        f:readinessProbe:
+                            .: {}
+                            f:failureThreshold: {}
+                            f:httpGet:
+                                .: {}
+                                f:path: {}
+                                f:port: {}
+                                f:scheme: {}
+                            f:initialDelaySeconds: {}
+                            f:periodSeconds: {}
+                            f:successThreshold: {}
+                            f:timeoutSeconds: {}
+                        f:resources:
+                            .: {}
+                            f:limits:
+                                .: {}
+                                f:cpu: {}
+                                f:memory: {}
+                                f:nvidia.com/gpu: {}
+                            f:requests:
+                                .: {}
+                                f:cpu: {}
+                                f:memory: {}
+                                f:nvidia.com/gpu: {}
+                        f:stdin: {}
+                        f:terminationMessagePath: {}
+                        f:terminationMessagePolicy: {}
+                        f:tty: {}
+                        f:volumeMounts:
+                            .: {}
+                            k:{"mountPath":"/dev/shm"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                            k:{"mountPath":"/mnt"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                                f:readOnly: {}
+                            k:{"mountPath":"/root/.cache/huggingface"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                f:dnsPolicy: {}
+                f:enableServiceLinks: {}
+                f:restartPolicy: {}
+                f:schedulerName: {}
+                f:securityContext: {}
+                f:terminationGracePeriodSeconds: {}
+                f:volumes:
+                    .: {}
+                    k:{"name":"dshm"}:
+                        .: {}
+                        f:emptyDir:
+                            .: {}
+                            f:medium: {}
+                            f:sizeLimit: {}
+                        f:name: {}
+                    k:{"name":"hf-cache"}:
+                        .: {}
+                        f:hostPath:
+                            .: {}
+                            f:path: {}
+                            f:type: {}
+                        f:name: {}
+                    k:{"name":"vgpu"}:
+                        .: {}
+                        f:hostPath:
+                            .: {}
+                            f:path: {}
+                            f:type: {}
+                        f:name: {}
+        manager: kube-controller-manager
+        operation: Update
+        time: '2026-10-06T10:07:06Z'
+    -   apiVersion: v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:status:
+                f:allocatedResources:
+                    .: {}
+                    f:cpu: {}
+                    f:memory: {}
+                    f:nvidia.com/gpu: {}
+                f:conditions:
+                    k:{"type":"ContainersReady"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"Initialized"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"PodReadyToStartContainers"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"PodScheduled"}:
+                        f:observedGeneration: {}
+                    k:{"type":"Ready"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                f:containerStatuses: {}
+                f:hostIP: {}
+                f:hostIPs: {}
+                f:observedGeneration: {}
+                f:phase: {}
+                f:podIP: {}
+                f:podIPs:
+                    .: {}
+                    k:{"ip":"10.100.0.3"}:
+                        .: {}
+                        f:ip: {}
+                f:resources:
+                    .: {}
+                    f:limits:
+                        .: {}
+                        f:cpu: {}
+                        f:memory: {}
+                    f:requests:
+                        .: {}
+                        f:cpu: {}
+                        f:memory: {}
+                f:startTime: {}
+        manager: kubelet
+        operation: Update
+        subresource: status
+        time: '2026-10-06T10:09:25Z'
+    name: vllm-server-gemma-82vmp
+    namespace: default
+    ownerReferences:
+    -   apiVersion: batch/v1
+        blockOwnerDeletion: true
+        controller: true
+        kind: Job
+        name: vllm-server-gemma
+        uid: 26534668-6f76-4223-8894-f73375211a37
+    resourceVersion: '19080016'
+    uid: 9a84d7e6-2fc4-4bd1-bc49-ceba44f10b6d
+spec:
+    containers:
+    -   args:
+        - --model
+        - $(MODEL_NAME)
+        - --tensor-parallel-size
+        - '1'
+        - --max-model-len
+        - '1024'
+        - --async-scheduling
+        - --limit-mm-per-prompt.video
+        - '0'
+        - --no-enable-prefix-caching
+        - --gpu_memory_utilization
+        - '0.9'
+        - --cpu-offload-gb
+        - '0.1'
+        env:
+        -   name: MODEL_NAME
+            value: RedHatAI/gemma-2-2b-it-quantized.w4a16
+        -   name: HF_TOKEN
+            valueFrom:
+                secretKeyRef:
+                    key: HF_TOKEN
+                    name: hf-token-secret
+        -   name: HF_HOME
+            value: /root/.cache/huggingface/
+        -   name: LIBCUDA_LOG_LEVEL
+            value: '2'
+        image: docker.io/vllm/vllm-openai:v0.28.0-x86_64
+        imagePullPolicy: Never
+        name: vllm-server-gemma
+        ports:
+        -   containerPort: 8000
+            name: http
+            protocol: TCP
+        readinessProbe:
+            failureThreshold: 90
+            httpGet:
+                path: /health
+                port: 8000
+                scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+        resources:
+            limits:
+                cpu: '5'
+                memory: 16Gi
+                nvidia.com/gpu: '1'
+            requests:
+                cpu: '5'
+                memory: 16Gi
+                nvidia.com/gpu: '1'
+        stdin: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        tty: true
+        volumeMounts:
+        -   mountPath: /root/.cache/huggingface
+            name: hf-cache
+        -   mountPath: /dev/shm
+            name: dshm
+        -   mountPath: /mnt
+            name: vgpu
+            readOnly: true
+        -   mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            name: kube-api-access-xpm5h
+            readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    nodeName: baysan
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Never
+    schedulerName: default-scheduler
+    securityContext: {}
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    -   effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 300
+    -   effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 300
+    volumes:
+    -   hostPath:
+            path: /home/ubuntu/.cache/huggingface
+            type: Directory
+        name: hf-cache
+    -   emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+        name: dshm
+    -   hostPath:
+            path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/HAMi-core/build
+            type: Directory
+        name: vgpu
+    -   name: kube-api-access-xpm5h
+        projected:
+            defaultMode: 420
+            sources:
+            -   serviceAccountToken:
+                    expirationSeconds: 3607
+                    path: token
+            -   configMap:
+                    items:
+                    -   key: ca.crt
+                        path: ca.crt
+                    name: kube-root-ca.crt
+            -   downwardAPI:
+                    items:
+                    -   fieldRef:
+                            apiVersion: v1
+                            fieldPath: metadata.namespace
+                        path: namespace
+status:
+    allocatedResources:
+        cpu: '5'
+        memory: 16Gi
+        nvidia.com/gpu: '1'
+    conditions:
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T10:07:10Z'
+        observedGeneration: 1
+        status: 'True'
+        type: PodReadyToStartContainers
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T10:07:06Z'
+        observedGeneration: 1
+        status: 'True'
+        type: Initialized
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T10:09:25Z'
+        observedGeneration: 1
+        status: 'True'
+        type: Ready
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T10:09:25Z'
+        observedGeneration: 1
+        status: 'True'
+        type: ContainersReady
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T10:07:06Z'
+        observedGeneration: 1
+        status: 'True'
+        type: PodScheduled
+    containerStatuses:
+    -   allocatedResources:
+            cpu: '5'
+            memory: 16Gi
+            nvidia.com/gpu: '1'
+        allocatedResourcesStatus:
+        -   name: nvidia.com/gpu
+            resources:
+            -   health: Healthy
+                resourceID: MIG-89658f1c-f694-5476-9bfa-8040154bb7d1
+        containerID: containerd://ba9b4ee808156157bc03f6825e04cccc69e8693c6c240589820a9077338b0643
+        image: docker.io/vllm/vllm-openai:v0.28.0-x86_64
+        imageID: sha256:609a5b463503f663bedc6a8045ef2aae530bf59c6dc20371c84b1d302fb6f9ca
+        lastState: {}
+        name: vllm-server-gemma
+        ready: true
+        resources:
+            limits:
+                cpu: '5'
+                memory: 16Gi
+                nvidia.com/gpu: '1'
+            requests:
+                cpu: '5'
+                memory: 16Gi
+                nvidia.com/gpu: '1'
+        restartCount: 0
+        started: true
+        state:
+            running:
+                startedAt: '2026-10-06T10:07:10Z'
+        user:
+            linux:
+                gid: 0
+                supplementalGroups:
+                - 0
+                uid: 0
+        volumeMounts:
+        -   mountPath: /root/.cache/huggingface
+            name: hf-cache
+        -   mountPath: /dev/shm
+            name: dshm
+        -   mountPath: /mnt
+            name: vgpu
+            readOnly: true
+            recursiveReadOnly: Disabled
+        -   mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            name: kube-api-access-xpm5h
+            readOnly: true
+            recursiveReadOnly: Disabled
+    hostIP: 192.168.10.109
+    hostIPs:
+    -   ip: 192.168.10.109
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.100.0.3
+    podIPs:
+    -   ip: 10.100.0.3
+    qosClass: Guaranteed
+    resources:
+        limits:
+            cpu: '5'
+            memory: 16Gi
+        requests:
+            cpu: 4995m
+            memory: 16Gi
+    startTime: '2026-10-06T10:07:06Z'
+

@@ -1,9 +1,11 @@
-from pathlib import Path
+import json
 from datetime import datetime
-import pandas as pd
-import numpy as np
 from io import StringIO
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 # Publication-style defaults
 plt.rcParams.update({
@@ -21,22 +23,52 @@ plt.rcParams.update({
     "ps.fonttype": 42,
 })
 
-def get_latest_experiment_dir(base_dir: str | Path, exp_path_pre: str) -> Path | None:
+
+def get_latest_experiment_dir(
+    base_dir: str | Path,
+    exp_path_pre: str,
+    key: str = "",
+    value: object = "",
+) -> Path | None:
     """
-    Finds and returns the Path object of the directory matching `exp_path_pre`
-    with the latest timestamp suffix.
-    
-    Expected suffix format: YYYYMMDDTHHMMSS (e.g., 20260930T004307)
-    
+    Finds and returns the latest directory matching `exp_path_pre`.
+
+    When both `key` and `value` are provided, only directories whose
+    `run_metadata.json` contains that exact top-level key/value pair are
+    considered.
+
+    Expected suffix format: YYYYMMDDTHHMMSS
+    (e.g., 20260930T004307)
+
     :param base_dir: The directory containing all the experiment folders.
     :param exp_path_pre: The prefix matching the experiment name and settings.
-    :return: Path of the latest experiment directory, or None if no match is found.
+    :param key: Optional top-level key to match in `run_metadata.json`.
+    :param value: Optional value that `key` must match in `run_metadata.json`.
+    :return: Latest matching experiment directory, or None if none is found.
     """
     base_path = Path(base_dir)
 
-    # Pattern matching all directories starting with the prefix and having a timestamp suffix
+    # Match directories starting with the prefix and ending with a timestamp.
     # e.g., "ram_bandwidth_stress_1v1_cpuoffload-on_*"
-    matching_dirs = [p for p in base_path.glob(f"{exp_path_pre}_*") if p.is_dir()]
+    matching_dirs = [
+        p for p in base_path.glob(f"{exp_path_pre}_*") if p.is_dir()
+    ]
+
+    if key and value != "":
+        metadata_matching_dirs = []
+        for directory in matching_dirs:
+            metadata_path = directory / "run_metadata.json"
+            if not metadata_path.is_file():
+                continue
+            with metadata_path.open(encoding="utf-8") as metadata_file:
+                metadata = json.load(metadata_file)
+            if (
+                isinstance(metadata, dict)
+                and key in metadata["parameters"]
+                and metadata["parameters"][key] == value
+            ):
+                metadata_matching_dirs.append(directory)
+        matching_dirs = metadata_matching_dirs
 
     if not matching_dirs:
         return None
@@ -50,13 +82,12 @@ def get_latest_experiment_dir(base_dir: str | Path, exp_path_pre: str) -> Path |
             # Fall back to minimum datetime if a folder doesn't match the timestamp format
             return datetime.min
 
-    # Sort and return the path with the latest parsed timestamp
     latest_dir = max(matching_dirs, key=extract_timestamp)
-    
+
     # Check if a valid timestamp was found
     if extract_timestamp(latest_dir) == datetime.min:
         return None
-        
+
     return latest_dir
 
 
@@ -147,15 +178,15 @@ def plot_throughput_and_rps(MODEL_LIST, results_df, exp_phases, save_prefix=None
     phases = list(exp_phases)
 
     specs = [
-        ("Request Count", "Request Count", "{:.0f}", "request_count"),
+        ("Request Throughput", "Request Throughput (requests/sec)", "{:.0f}", "request_throughput"),
         ("Output Token Throughput", "Output Token Throughput (tokens/s)", "{:.1f}", "output_throughput"),
     ]
 
     for column, ylabel, fmt, name in specs:
-        fig, ax = plt.subplots(figsize=(8, 4.5))
+        fig, ax = plt.subplots(figsize=(8, 6))
         _grouped_bar(ax, results_df, models, phases, column, ylabel, fmt=fmt)
         fig.tight_layout()
         if save_prefix:
-            fig.savefig(f"{save_prefix}_{name}.pdf", bbox_inches="tight")
-            fig.savefig(f"{save_prefix}_{name}.png", bbox_inches="tight")
+            fig.savefig(f"../figures/{save_prefix}_{name}.pdf", bbox_inches="tight")
+            fig.savefig(f"../figures/{save_prefix}_{name}.png", bbox_inches="tight")
         plt.show()

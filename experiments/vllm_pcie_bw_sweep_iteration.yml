@@ -322,6 +322,28 @@
     # =========================================================================
     # 5. Wait until the benchmark finishes
     # =========================================================================
+    # Until now the controller kept the bucket full (boot phase), so model loading
+    # and warm-up were not throttled and no credit could pile up. Touching the GO
+    # file empties the bucket and starts rate limiting for the measured window.
+    - name: Release the rate limiter (start of the measured window)
+      ansible.builtin.file:
+        path: "{{ rate_control_dir }}/{{ go_file_name }}"
+        state: touch
+        mode: '0644'
+      when: bw_control == 'on'
+      delegate_to: "{{ server_host }}"
+
+    - name: Confirm the controller switched to the limit phase
+      ansible.builtin.command:
+        argv: [grep, -q, ',limit$', "{{ server_results_dir }}/scheduler.csv"]
+      register: limit_phase
+      until: limit_phase.rc == 0
+      retries: 10
+      delay: 1
+      changed_when: false
+      when: bw_control == 'on'
+      delegate_to: "{{ server_host }}"
+
     - name: Run the benchmark ({{ setting_name }})
       ansible.builtin.command:
         cmd: "{{ iter_client_dir }}/run_benchmark.sh"

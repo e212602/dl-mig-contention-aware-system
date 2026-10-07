@@ -1,0 +1,10 @@
+[
+    {
+        "end": "2026-10-06T15:47:04Z",
+        "end_unix": 1791301624,
+        "file": "/tmp/vllm_pcie_bw_sweep_cpuoffload-on_20261006T172506/Qwen_Qwen2.5-3B-Instruct-GPTQ-Int8/gb_rate-2/artifacts/gb_rate-2/Qwen_Qwen2.5-3B-Instruct-GPTQ-Int8_rps10_n200/gb_rate-2_raw.jsonl",
+        "requests": 200,
+        "start": "2026-10-06T15:44:31Z",
+        "start_unix": 1791301471
+    }
+]

@@ -1,0 +1,872 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+    creationTimestamp: '2026-10-06T12:31:01Z'
+    generation: 1
+    labels:
+        app.kubernetes.io/part-of: vllm-pcie-sweep
+    managedFields:
+    -   apiVersion: v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:metadata:
+                f:labels:
+                    .: {}
+                    f:app.kubernetes.io/part-of: {}
+            f:spec:
+                f:containers:
+                    k:{"name":"controller"}:
+                        .: {}
+                        f:env:
+                            .: {}
+                            k:{"name":"BURST_TICKS"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"GB_RATE"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"GO_FILE"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"READY_FILE"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"SCHEDULER_LOG"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"WORKER_IDS"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                        f:image: {}
+                        f:imagePullPolicy: {}
+                        f:name: {}
+                        f:resources:
+                            .: {}
+                            f:limits:
+                                .: {}
+                                f:cpu: {}
+                                f:memory: {}
+                            f:requests:
+                                .: {}
+                                f:cpu: {}
+                                f:memory: {}
+                        f:terminationMessagePath: {}
+                        f:terminationMessagePolicy: {}
+                        f:volumeMounts:
+                            .: {}
+                            k:{"mountPath":"/tmp/rate-control"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                            k:{"mountPath":"/tmp/results"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                f:dnsPolicy: {}
+                f:enableServiceLinks: {}
+                f:restartPolicy: {}
+                f:schedulerName: {}
+                f:securityContext: {}
+                f:terminationGracePeriodSeconds: {}
+                f:volumes:
+                    .: {}
+                    k:{"name":"rate-control"}:
+                        .: {}
+                        f:hostPath:
+                            .: {}
+                            f:path: {}
+                            f:type: {}
+                        f:name: {}
+                    k:{"name":"results"}:
+                        .: {}
+                        f:hostPath:
+                            .: {}
+                            f:path: {}
+                            f:type: {}
+                        f:name: {}
+        manager: OpenAPI-Generator
+        operation: Update
+        time: '2026-10-06T12:31:01Z'
+    -   apiVersion: v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:status:
+                f:allocatedResources:
+                    .: {}
+                    f:cpu: {}
+                    f:memory: {}
+                f:conditions:
+                    k:{"type":"ContainersReady"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"Initialized"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"PodReadyToStartContainers"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"PodScheduled"}:
+                        f:observedGeneration: {}
+                    k:{"type":"Ready"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                f:containerStatuses: {}
+                f:hostIP: {}
+                f:hostIPs: {}
+                f:observedGeneration: {}
+                f:phase: {}
+                f:podIP: {}
+                f:podIPs:
+                    .: {}
+                    k:{"ip":"10.100.0.41"}:
+                        .: {}
+                        f:ip: {}
+                f:resources:
+                    .: {}
+                    f:limits:
+                        .: {}
+                        f:cpu: {}
+                        f:memory: {}
+                    f:requests:
+                        .: {}
+                        f:cpu: {}
+                        f:memory: {}
+                f:startTime: {}
+        manager: kubelet
+        operation: Update
+        subresource: status
+        time: '2026-10-06T12:32:35Z'
+    name: controller
+    namespace: default
+    resourceVersion: '19104776'
+    uid: 4773fa3d-e2aa-42a5-bbdc-af97a252c975
+spec:
+    containers:
+    -   env:
+        -   name: GB_RATE
+            value: '32'
+        -   name: WORKER_IDS
+            value: '1'
+        -   name: READY_FILE
+            value: /tmp/rate-control/ready-ops-1
+        -   name: GO_FILE
+            value: /tmp/rate-control/go-ops-1
+        -   name: BURST_TICKS
+            value: '0'
+        -   name: SCHEDULER_LOG
+            value: /tmp/results/vllm_pcie_bw_sweep_cpuoffload-on_20261006T120648/Qwen_Qwen2.5-1.5B-Instruct/gb_rate-32/scheduler.csv
+        image: e8113/controller:latest
+        imagePullPolicy: Never
+        name: controller
+        resources:
+            limits:
+                cpu: '2'
+                memory: 2Gi
+            requests:
+                cpu: '2'
+                memory: 2Gi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        -   mountPath: /tmp/rate-control
+            name: rate-control
+        -   mountPath: /tmp/results
+            name: results
+        -   mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            name: kube-api-access-h5l97
+            readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    nodeName: baysan
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Never
+    schedulerName: default-scheduler
+    securityContext: {}
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    -   effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 300
+    -   effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 300
+    volumes:
+    -   hostPath:
+            path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control
+            type: DirectoryOrCreate
+        name: rate-control
+    -   hostPath:
+            path: /tmp/results
+            type: DirectoryOrCreate
+        name: results
+    -   name: kube-api-access-h5l97
+        projected:
+            defaultMode: 420
+            sources:
+            -   serviceAccountToken:
+                    expirationSeconds: 3607
+                    path: token
+            -   configMap:
+                    items:
+                    -   key: ca.crt
+                        path: ca.crt
+                    name: kube-root-ca.crt
+            -   downwardAPI:
+                    items:
+                    -   fieldRef:
+                            apiVersion: v1
+                            fieldPath: metadata.namespace
+                        path: namespace
+status:
+    allocatedResources:
+        cpu: '2'
+        memory: 2Gi
+    conditions:
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:31:03Z'
+        observedGeneration: 1
+        status: 'True'
+        type: PodReadyToStartContainers
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:31:02Z'
+        observedGeneration: 1
+        status: 'True'
+        type: Initialized
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:31:04Z'
+        observedGeneration: 1
+        status: 'True'
+        type: Ready
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:31:04Z'
+        observedGeneration: 1
+        status: 'True'
+        type: ContainersReady
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:31:01Z'
+        observedGeneration: 1
+        status: 'True'
+        type: PodScheduled
+    containerStatuses:
+    -   allocatedResources:
+            cpu: '2'
+            memory: 2Gi
+        containerID: containerd://6519a6bd8821ff052ce5af7b6d966a616f3e4350e958c6495b492b709adcefa8
+        image: docker.io/e8113/controller:latest
+        imageID: sha256:2298b5a8f030a3d5a718c5a1ae2b75720e64de619055cea3243780faa40d698e
+        lastState: {}
+        name: controller
+        ready: true
+        resources:
+            limits:
+                cpu: '2'
+                memory: 2Gi
+            requests:
+                cpu: '2'
+                memory: 2Gi
+        restartCount: 0
+        started: true
+        state:
+            running:
+                startedAt: '2026-10-06T12:31:03Z'
+        user:
+            linux:
+                gid: 0
+                supplementalGroups:
+                - 0
+                uid: 0
+        volumeMounts:
+        -   mountPath: /tmp/rate-control
+            name: rate-control
+        -   mountPath: /tmp/results
+            name: results
+        -   mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            name: kube-api-access-h5l97
+            readOnly: true
+            recursiveReadOnly: Disabled
+    hostIP: 192.168.10.109
+    hostIPs:
+    -   ip: 192.168.10.109
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.100.0.41
+    podIPs:
+    -   ip: 10.100.0.41
+    qosClass: Guaranteed
+    resources:
+        limits:
+            cpu: '2'
+            memory: 2Gi
+        requests:
+            cpu: 1999m
+            memory: 2Gi
+    startTime: '2026-10-06T12:31:02Z'
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+    creationTimestamp: '2026-10-06T12:30:58Z'
+    finalizers:
+    - batch.kubernetes.io/job-tracking
+    generateName: vllm-server-qwen3-
+    generation: 1
+    labels:
+        app.kubernetes.io/part-of: vllm-pcie-sweep
+        batch.kubernetes.io/controller-uid: 90fcbd30-ee3c-4452-919b-fe03fe18f6bb
+        batch.kubernetes.io/job-name: vllm-server-qwen3
+        controller-uid: 90fcbd30-ee3c-4452-919b-fe03fe18f6bb
+        job-name: vllm-server-qwen3
+        pcie-bw-control: 'on'
+    managedFields:
+    -   apiVersion: v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:metadata:
+                f:finalizers:
+                    .: {}
+                    v:"batch.kubernetes.io/job-tracking": {}
+                f:generateName: {}
+                f:labels:
+                    .: {}
+                    f:app.kubernetes.io/part-of: {}
+                    f:batch.kubernetes.io/controller-uid: {}
+                    f:batch.kubernetes.io/job-name: {}
+                    f:controller-uid: {}
+                    f:job-name: {}
+                    f:pcie-bw-control: {}
+                f:ownerReferences:
+                    .: {}
+                    k:{"uid":"90fcbd30-ee3c-4452-919b-fe03fe18f6bb"}: {}
+            f:spec:
+                f:containers:
+                    k:{"name":"vllm-server-qwen3"}:
+                        .: {}
+                        f:args: {}
+                        f:env:
+                            .: {}
+                            k:{"name":"HF_HOME"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"HF_TOKEN"}:
+                                .: {}
+                                f:name: {}
+                                f:valueFrom:
+                                    .: {}
+                                    f:secretKeyRef: {}
+                            k:{"name":"LD_PRELOAD"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"LIBCUDA_LOG_LEVEL"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"MODEL_NAME"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                            k:{"name":"SHARED_REGION_CACHE_ENV"}:
+                                .: {}
+                                f:name: {}
+                                f:value: {}
+                        f:image: {}
+                        f:imagePullPolicy: {}
+                        f:name: {}
+                        f:ports:
+                            .: {}
+                            k:{"containerPort":8000,"protocol":"TCP"}:
+                                .: {}
+                                f:containerPort: {}
+                                f:name: {}
+                                f:protocol: {}
+                        f:readinessProbe:
+                            .: {}
+                            f:failureThreshold: {}
+                            f:httpGet:
+                                .: {}
+                                f:path: {}
+                                f:port: {}
+                                f:scheme: {}
+                            f:initialDelaySeconds: {}
+                            f:periodSeconds: {}
+                            f:successThreshold: {}
+                            f:timeoutSeconds: {}
+                        f:resources:
+                            .: {}
+                            f:limits:
+                                .: {}
+                                f:cpu: {}
+                                f:memory: {}
+                                f:nvidia.com/gpu: {}
+                            f:requests:
+                                .: {}
+                                f:cpu: {}
+                                f:memory: {}
+                                f:nvidia.com/gpu: {}
+                        f:stdin: {}
+                        f:terminationMessagePath: {}
+                        f:terminationMessagePolicy: {}
+                        f:tty: {}
+                        f:volumeMounts:
+                            .: {}
+                            k:{"mountPath":"/dev/shm"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                            k:{"mountPath":"/mnt"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                                f:readOnly: {}
+                            k:{"mountPath":"/root/.cache/huggingface"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                            k:{"mountPath":"/tmp/rate-control"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                f:dnsPolicy: {}
+                f:enableServiceLinks: {}
+                f:initContainers:
+                    .: {}
+                    k:{"name":"wait-for-rate-control"}:
+                        .: {}
+                        f:command: {}
+                        f:image: {}
+                        f:imagePullPolicy: {}
+                        f:name: {}
+                        f:resources: {}
+                        f:terminationMessagePath: {}
+                        f:terminationMessagePolicy: {}
+                        f:volumeMounts:
+                            .: {}
+                            k:{"mountPath":"/tmp/rate-control"}:
+                                .: {}
+                                f:mountPath: {}
+                                f:name: {}
+                f:restartPolicy: {}
+                f:schedulerName: {}
+                f:securityContext: {}
+                f:terminationGracePeriodSeconds: {}
+                f:volumes:
+                    .: {}
+                    k:{"name":"dshm"}:
+                        .: {}
+                        f:emptyDir:
+                            .: {}
+                            f:medium: {}
+                            f:sizeLimit: {}
+                        f:name: {}
+                    k:{"name":"hf-cache"}:
+                        .: {}
+                        f:hostPath:
+                            .: {}
+                            f:path: {}
+                            f:type: {}
+                        f:name: {}
+                    k:{"name":"rate-control"}:
+                        .: {}
+                        f:hostPath:
+                            .: {}
+                            f:path: {}
+                            f:type: {}
+                        f:name: {}
+                    k:{"name":"vgpu"}:
+                        .: {}
+                        f:hostPath:
+                            .: {}
+                            f:path: {}
+                            f:type: {}
+                        f:name: {}
+        manager: kube-controller-manager
+        operation: Update
+        time: '2026-10-06T12:30:58Z'
+    -   apiVersion: v1
+        fieldsType: FieldsV1
+        fieldsV1:
+            f:status:
+                f:allocatedResources:
+                    .: {}
+                    f:cpu: {}
+                    f:memory: {}
+                    f:nvidia.com/gpu: {}
+                f:conditions:
+                    k:{"type":"ContainersReady"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"Initialized"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"PodReadyToStartContainers"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                    k:{"type":"PodScheduled"}:
+                        f:observedGeneration: {}
+                    k:{"type":"Ready"}:
+                        .: {}
+                        f:lastProbeTime: {}
+                        f:lastTransitionTime: {}
+                        f:observedGeneration: {}
+                        f:status: {}
+                        f:type: {}
+                f:containerStatuses: {}
+                f:hostIP: {}
+                f:hostIPs: {}
+                f:initContainerStatuses: {}
+                f:observedGeneration: {}
+                f:phase: {}
+                f:podIP: {}
+                f:podIPs:
+                    .: {}
+                    k:{"ip":"10.100.0.40"}:
+                        .: {}
+                        f:ip: {}
+                f:resources:
+                    .: {}
+                    f:limits:
+                        .: {}
+                        f:cpu: {}
+                        f:memory: {}
+                    f:requests:
+                        .: {}
+                        f:cpu: {}
+                        f:memory: {}
+                f:startTime: {}
+        manager: kubelet
+        operation: Update
+        subresource: status
+        time: '2026-10-06T12:32:59Z'
+    name: vllm-server-qwen3-z4c5c
+    namespace: default
+    ownerReferences:
+    -   apiVersion: batch/v1
+        blockOwnerDeletion: true
+        controller: true
+        kind: Job
+        name: vllm-server-qwen3
+        uid: 90fcbd30-ee3c-4452-919b-fe03fe18f6bb
+    resourceVersion: '19104844'
+    uid: 32e30e82-a0e4-4794-8194-bd84c6bfd64a
+spec:
+    containers:
+    -   args:
+        - --model
+        - $(MODEL_NAME)
+        - --tensor-parallel-size
+        - '1'
+        - --max-model-len
+        - '1024'
+        - --async-scheduling
+        - --limit-mm-per-prompt.video
+        - '0'
+        - --no-enable-prefix-caching
+        - --gpu_memory_utilization
+        - '0.9'
+        - --cpu-offload-gb
+        - '0.2'
+        env:
+        -   name: MODEL_NAME
+            value: Qwen/Qwen2.5-1.5B-Instruct
+        -   name: HF_TOKEN
+            valueFrom:
+                secretKeyRef:
+                    key: HF_TOKEN
+                    name: hf-token-secret
+        -   name: HF_HOME
+            value: /root/.cache/huggingface/
+        -   name: LD_PRELOAD
+            value: /mnt/libvgpu.so
+        -   name: SHARED_REGION_CACHE_ENV
+            value: /tmp/rate-control/rate-control-ops-1
+        -   name: LIBCUDA_LOG_LEVEL
+            value: '2'
+        image: docker.io/vllm/vllm-openai:v0.28.0-x86_64
+        imagePullPolicy: Never
+        name: vllm-server-qwen3
+        ports:
+        -   containerPort: 8000
+            name: http
+            protocol: TCP
+        readinessProbe:
+            failureThreshold: 90
+            httpGet:
+                path: /health
+                port: 8000
+                scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+        resources:
+            limits:
+                cpu: '5'
+                memory: 16Gi
+                nvidia.com/gpu: '1'
+            requests:
+                cpu: '5'
+                memory: 16Gi
+                nvidia.com/gpu: '1'
+        stdin: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        tty: true
+        volumeMounts:
+        -   mountPath: /root/.cache/huggingface
+            name: hf-cache
+        -   mountPath: /dev/shm
+            name: dshm
+        -   mountPath: /mnt
+            name: vgpu
+            readOnly: true
+        -   mountPath: /tmp/rate-control
+            name: rate-control
+        -   mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            name: kube-api-access-b5zdq
+            readOnly: true
+    dnsPolicy: ClusterFirst
+    enableServiceLinks: true
+    initContainers:
+    -   command:
+        - sh
+        - -c
+        - "echo \"Waiting for /tmp/rate-control/ready-ops-1 ...\"\nuntil [ -f /tmp/rate-control/ready-ops-1
+            ]; do\n  sleep 1\ndone\necho \"Rate control is ready.\"\n"
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        name: wait-for-rate-control
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        -   mountPath: /tmp/rate-control
+            name: rate-control
+        -   mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            name: kube-api-access-b5zdq
+            readOnly: true
+    nodeName: baysan
+    preemptionPolicy: PreemptLowerPriority
+    priority: 0
+    restartPolicy: Never
+    schedulerName: default-scheduler
+    securityContext: {}
+    serviceAccount: default
+    serviceAccountName: default
+    terminationGracePeriodSeconds: 30
+    tolerations:
+    -   effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 300
+    -   effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 300
+    volumes:
+    -   hostPath:
+            path: /home/ubuntu/.cache/huggingface
+            type: Directory
+        name: hf-cache
+    -   emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+        name: dshm
+    -   hostPath:
+            path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/HAMi-core/build
+            type: Directory
+        name: vgpu
+    -   hostPath:
+            path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control
+            type: DirectoryOrCreate
+        name: rate-control
+    -   name: kube-api-access-b5zdq
+        projected:
+            defaultMode: 420
+            sources:
+            -   serviceAccountToken:
+                    expirationSeconds: 3607
+                    path: token
+            -   configMap:
+                    items:
+                    -   key: ca.crt
+                        path: ca.crt
+                    name: kube-root-ca.crt
+            -   downwardAPI:
+                    items:
+                    -   fieldRef:
+                            apiVersion: v1
+                            fieldPath: metadata.namespace
+                        path: namespace
+status:
+    allocatedResources:
+        cpu: '5'
+        memory: 16Gi
+        nvidia.com/gpu: '1'
+    conditions:
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:31:02Z'
+        observedGeneration: 1
+        status: 'True'
+        type: PodReadyToStartContainers
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:31:05Z'
+        observedGeneration: 1
+        status: 'True'
+        type: Initialized
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:32:59Z'
+        observedGeneration: 1
+        status: 'True'
+        type: Ready
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:32:59Z'
+        observedGeneration: 1
+        status: 'True'
+        type: ContainersReady
+    -   lastProbeTime: null
+        lastTransitionTime: '2026-10-06T12:30:58Z'
+        observedGeneration: 1
+        status: 'True'
+        type: PodScheduled
+    containerStatuses:
+    -   allocatedResources:
+            cpu: '5'
+            memory: 16Gi
+            nvidia.com/gpu: '1'
+        allocatedResourcesStatus:
+        -   name: nvidia.com/gpu
+            resources:
+            -   health: Healthy
+                resourceID: MIG-6f8d46a5-f804-5855-8903-e2b414260619
+        containerID: containerd://c80b5463ba663fddb31e635eaf8bb867c303f093cb0308f0d4642e71a45dcb8f
+        image: docker.io/vllm/vllm-openai:v0.28.0-x86_64
+        imageID: sha256:609a5b463503f663bedc6a8045ef2aae530bf59c6dc20371c84b1d302fb6f9ca
+        lastState: {}
+        name: vllm-server-qwen3
+        ready: true
+        resources:
+            limits:
+                cpu: '5'
+                memory: 16Gi
+                nvidia.com/gpu: '1'
+            requests:
+                cpu: '5'
+                memory: 16Gi
+                nvidia.com/gpu: '1'
+        restartCount: 0
+        started: true
+        state:
+            running:
+                startedAt: '2026-10-06T12:31:06Z'
+        user:
+            linux:
+                gid: 0
+                supplementalGroups:
+                - 0
+                uid: 0
+        volumeMounts:
+        -   mountPath: /root/.cache/huggingface
+            name: hf-cache
+        -   mountPath: /dev/shm
+            name: dshm
+        -   mountPath: /mnt
+            name: vgpu
+            readOnly: true
+            recursiveReadOnly: Disabled
+        -   mountPath: /tmp/rate-control
+            name: rate-control
+        -   mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            name: kube-api-access-b5zdq
+            readOnly: true
+            recursiveReadOnly: Disabled
+    hostIP: 192.168.10.109
+    hostIPs:
+    -   ip: 192.168.10.109
+    initContainerStatuses:
+    -   containerID: containerd://28141ffafd7813c138380455371df7f24bb071bdaee2aeab289dfee064148b92
+        image: docker.io/library/busybox:1.36
+        imageID: docker.io/library/busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+        lastState: {}
+        name: wait-for-rate-control
+        ready: true
+        resources: {}
+        restartCount: 0
+        started: false
+        state:
+            terminated:
+                containerID: containerd://28141ffafd7813c138380455371df7f24bb071bdaee2aeab289dfee064148b92
+                exitCode: 0
+                finishedAt: '2026-10-06T12:31:04Z'
+                reason: Completed
+                startedAt: '2026-10-06T12:31:02Z'
+        user:
+            linux:
+                gid: 0
+                supplementalGroups:
+                - 0
+                - 10
+                uid: 0
+        volumeMounts:
+        -   mountPath: /tmp/rate-control
+            name: rate-control
+        -   mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+            name: kube-api-access-b5zdq
+            readOnly: true
+            recursiveReadOnly: Disabled
+    observedGeneration: 1
+    phase: Running
+    podIP: 10.100.0.40
+    podIPs:
+    -   ip: 10.100.0.40
+    qosClass: Burstable
+    resources:
+        limits:
+            cpu: '5'
+            memory: 16Gi
+        requests:
+            cpu: 4995m
+            memory: 16Gi
+    startTime: '2026-10-06T12:30:58Z'
+

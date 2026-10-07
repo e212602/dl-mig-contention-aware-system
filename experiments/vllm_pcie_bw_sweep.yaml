@@ -143,6 +143,7 @@
     cpu_offload_enabled: "{{ hostvars['localhost']['cpu_offload_enabled'] }}"
     controller_pod_name: controller
     ready_file_name: "ready-ops-{{ rate_control_worker_id }}"
+    go_file_name: "go-ops-{{ rate_control_worker_id }}"
     vllm_template_file: "{{ playbook_dir }}/manifests/vllm_server.yaml.j2"
     controller_template_file: "{{ playbook_dir }}/manifests/controller_sweep.yaml.j2"
     # 'baseline' (if enabled) first, then every GB_RATE.
