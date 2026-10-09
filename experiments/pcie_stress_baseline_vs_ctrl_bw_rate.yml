@@ -66,6 +66,13 @@
     mode: "0755"
   delegate_to: localhost
 
+- name: Create the results directory for this iteration on the server
+  ansible.builtin.file:
+    path: "{{ server_results_dir }}"
+    state: directory
+    mode: '0755'
+  become: true
+
 - name: Create PCIe worker jobs
   kubernetes.core.k8s:
     state: present
@@ -125,3 +132,32 @@
   loop: "{{ pcie_workers }}"
   loop_control:
     label: "worker {{ item.worker_number }} (bw_control={{ item.bw_control }})"
+
+- name: Check for server results
+  ansible.builtin.stat:
+    path: "{{ server_results_dir }}"
+  become: true
+  register: server_results_stat
+
+- name: Compress server results
+  ansible.builtin.command:
+    cmd: "tar -czf {{ server_results_dir }}.tar.gz -C {{ server_results_dir }} ."
+  become: true
+  when: server_results_stat.stat.exists
+
+- name: Transfer server results to the controller
+  ansible.builtin.fetch:
+    src: "{{ server_results_dir }}.tar.gz"
+    dest: "{{ local_run_dir }}/gb_rate-{{ gb_rate }}/server_results.tar.gz"
+    flat: true
+  become: true
+  when: server_results_stat.stat.exists
+
+- name: Delete server results of this iteration
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ server_results_dir }}"
+    - "{{ server_results_dir }}.tar.gz"
+  become: true

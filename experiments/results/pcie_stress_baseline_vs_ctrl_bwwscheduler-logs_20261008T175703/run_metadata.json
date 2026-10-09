@@ -1,0 +1,19 @@
+{
+    "experiment_name": "pcie_stress_baseline_vs_ctrl_bwwscheduler-logs",
+    "git_commit": "e2a6612fddbeb384e72013e55eedd7d6b2a8903b",
+    "parameters": {
+        "baseline_workers": 0,
+        "bw_control": [
+            "on"
+        ],
+        "controlled_workers": 1,
+        "gb_rate": [
+            8
+        ],
+        "worker_number": [
+            1
+        ]
+    },
+    "run_id": "pcie_stress_baseline_vs_ctrl_bwwscheduler-logs_20261008T175703",
+    "timestamp": "20261008T175703"
+}

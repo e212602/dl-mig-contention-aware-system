@@ -12,19 +12,20 @@
   connection: local
   gather_facts: false
   vars:
-    experiment_name: pcie_stress_baseline_vs_ctrl_bw
+    experiment_name: pcie_stress_baseline_vs_ctrl_bw{{ lookup('env', 'EXP_NAME_SUFFIX') | default('') }}
     output_base_dir: "{{ lookup('env', 'PWD') }}/results"
     server_host: "{{ lookup('env', 'SERVER_ID') }}"
-    gb_rate_values: [1, 2, 4, 8, 16, 32]
+    # gb_rate_values: [1, 2, 4, 8, 16, 32]
+    gb_rate_values: [8]
     pcie_workers:
       - worker_number: 1
         bw_control: "on"
-      - worker_number: 2
-        bw_control: "on"
-      - worker_number: 3
-        bw_control: "on"
-      - worker_number: 4
-        bw_control: "off"
+      # - worker_number: 2
+      #   bw_control: "on"
+      # - worker_number: 3
+      #   bw_control: "on"
+      # - worker_number: 4
+      #   bw_control: "off"
 
   tasks:
     - name: Validate experiment inputs
@@ -32,10 +33,10 @@
         that:
           - server_host | length > 0
           - gb_rate_values | length > 0
-          - pcie_workers | length == 4
-          - (pcie_workers | map(attribute='worker_number') | unique | list | length) == (pcie_workers | length)
-          - (pcie_workers | selectattr('bw_control', 'equalto', 'on') | list | length) == 3
-          - (pcie_workers | selectattr('bw_control', 'equalto', 'off') | list | length) == 1
+          # - pcie_workers | length == 1
+          # - (pcie_workers | map(attribute='worker_number') | unique | list | length) == (pcie_workers | length)
+          # - (pcie_workers | selectattr('bw_control', 'equalto', 'on') | list | length) == 3
+          # - (pcie_workers | selectattr('bw_control', 'equalto', 'off') | list | length) == 1
           # The controller maps rate-control-ops-<id> for each controlled worker and the
           # init containers wait on ready-ops-1, so controlled workers must include id 1.
           - 1 in (pcie_workers | selectattr('bw_control', 'equalto', 'on') | map(attribute='worker_number') | list)
@@ -95,7 +96,7 @@
     k8s_namespace: default
     rate_control_dir: /home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control
     pcie_results_dir: /tmp/results
-    controller_template_file: "{{ playbook_dir }}/manifests/controller_template.yaml.j2"
+    controller_template_file: "{{ playbook_dir }}/manifests/controller_sweep.yaml.j2"
     ops_template_file: "{{ playbook_dir }}/manifests/pcie_stress_job.yaml.j2"
     local_run_dir: "{{ hostvars['localhost']['run_dir'] }}"
     pcie_workers: "{{ hostvars['localhost']['pcie_experiment_workers'] }}"
@@ -104,6 +105,12 @@
     controlled_worker_ids: >-
       {{ pcie_workers | selectattr('bw_control', 'equalto', 'on')
          | map(attribute='worker_number') | join(',') }}
+    ready_file_name: "ready-ops-1"
+    go_file_name: ""
+    burst_ticks: 0
+    results_root: "{{ pcie_results_dir }}"
+    controller_pod_name: controller
+    rate_control_worker_id: "{{ controlled_worker_ids }}"
 
   tasks:
     - name: Run each GB_RATE with a clean server state
@@ -116,6 +123,8 @@
             label: "GB_RATE={{ current_gb_rate }}"
           vars:
             gb_rate: "{{ current_gb_rate }}"
+            iter_rel: "gb_rate-{{ current_gb_rate }}"
+            server_results_dir: "{{ results_root }}/{{ iter_rel }}"
 
       always:
         - name: Remove controller pod after the rate sweep

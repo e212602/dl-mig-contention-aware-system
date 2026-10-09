@@ -1,8 +1,8 @@
 models_list:
-  # - "RedHatAI/gemma-2-2b-it-quantized.w4a16"
+  - "RedHatAI/gemma-2-2b-it-quantized.w4a16"
   # - "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16"
   # - "Qwen/Qwen2.5-1.5B-Instruct"
-  - "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8"
+  # - "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8"
 
 cpu_offload_by_model:
   "RedHatAI/gemma-2-2b-it-quantized.w4a16": "0.1"
