@@ -159,11 +159,6 @@
         state: directory
         mode: '0755'
 
-    # Append group size to vllm_extra_args
-    - name: Iteratively append items to vllm_extra_args
-      ansible.builtin.set_fact:
-        vllm_extra_args: "{{ vllm_extra_args + [ '--offload_group_size', group_size | string ] }}"
-
     # =========================================================================
     # 2. vLLM server: Pending (init container) until rate control is ready
     # =========================================================================

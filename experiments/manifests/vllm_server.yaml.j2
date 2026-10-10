@@ -39,7 +39,10 @@ spec:
         - name: {{ job_name }}
           image: docker.io/vllm/vllm-openai:v0.28.0-x86_64
           imagePullPolicy: Never
-          args: {{ (['--model', '$(MODEL_NAME)'] + (vllm_extra_args | map('string') | list) + ['--cpu-offload-gb', cpu_offload_target | string]) | to_json }}
+                    args: {{ (['--model', '$(MODEL_NAME)']
+                    + (vllm_extra_args | map('string') | list)
+                    + (['--offload_group_size', setting | string] if bw_control == 'on' else [])
+                    + ['--cpu-offload-gb', cpu_offload_target | string]) | to_json }}
           env:
             - name: MODEL_NAME
               value: {{ model | to_json }}
