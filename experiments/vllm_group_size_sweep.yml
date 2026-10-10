@@ -3,7 +3,7 @@
 # vLLM + aiperf under a PCIe bandwidth limit.
 #
 # For every model in models_list, and for every setting (an optional baseline
-# without LD_PRELOAD, then each GB_RATE in gb_rate_values):
+# without LD_PRELOAD, then each GB_RATE in group_size_values):
 #   1. prepare the server (remove controller, Jobs and rate-control files)
 #   2. create the vLLM Job (Pending until the controller publishes the ready file)
 #   3. create the controller with GB_RATE=<rate>
@@ -31,7 +31,7 @@
   vars_files:
     - vllm_vars.yaml
     - aiperf_vars.yaml
-    - pcie_sweep_vars.yaml
+    - group_size_sweep_vars.yml
   vars:
     experiment_name: vllm_group_size_sweep
     output_base_dir: "{{ lookup('env', 'PWD') }}/results"
@@ -48,8 +48,8 @@
           - models_list | difference(cpu_offload_by_model.keys() | list) | length == 0
           - models_list | difference(model_urls.keys() | list) | length == 0
           - models_list | difference(model_urls_server.keys() | list) | length == 0
-          - gb_rate_values | length > 0 or include_baseline | bool
-          - (gb_rate_values | map('int') | select('gt', 0) | list | length) == (gb_rate_values | length)
+          - group_size_values | length > 0 or include_baseline | bool
+          - (group_size_values | map('int') | select('gt', 0) | list | length) == (group_size_values | length)
           - rate_control_worker_id | string is match('^[0-9]+$')
           # The URL path of each model names its Service/Ingress/Job, so it must be
           # a unique DNS-style label.
@@ -60,7 +60,7 @@
           (or leave it unset), make sure every model has an entry in
           cpu_offload_by_model, model_urls and model_urls_server, that the URL
           paths in model_urls_server are unique lowercase labels (e.g. /gemma),
-          and that gb_rate_values holds positive integers.
+          and that group_size_values holds positive integers.
 
     - name: Resolve CPU offload switch
       ansible.builtin.set_fact:
@@ -115,11 +115,11 @@
           models: "{{ models_list }}"
           request_rate: "{{ request_rate }}"
           request_count: "{{ request_count }}"
-          gb_rate_values: "{{ gb_rate_values }}"
+          group_size_values: "{{ group_size_values }}"
           include_baseline: "{{ include_baseline | bool }}"
           burst_ticks: "{{ burst_ticks }}"
           rate_control_worker_id: "{{ rate_control_worker_id }}"
-          vllm_extra_args: "{{ vllm_extra_args }}"
+          vllm_extra_args: "{{ vllm_base_extra_args }}"
           libcuda_log_level: "{{ libcuda_log_level }}"
           continue_on_failure: "{{ continue_on_failure | bool }}"
 
@@ -128,13 +128,13 @@
 # 2. Client: the whole sweep. One play so every iteration can use the client
 #    directly; server-side tasks are delegated to the server host.
 # -----------------------------------------------------------------------------
-- name: Run PCIe bandwidth sweep (client)
+- name: Run Group Size sweep (client)
   hosts: "{{ lookup('env', 'CLIENT_ID') }}"
   gather_facts: false
   vars_files:
     - vllm_vars.yaml
     - aiperf_vars.yaml
-    - pcie_sweep_vars.yaml
+    - group_size_sweep_vars.yml
   vars:
     server_host: "{{ lookup('env', 'SERVER_ID') }}"
     k8s_namespace: default
@@ -147,7 +147,7 @@
     vllm_template_file: "{{ playbook_dir }}/manifests/vllm_server.yaml.j2"
     controller_template_file: "{{ playbook_dir }}/manifests/controller_sweep.yaml.j2"
     # 'baseline' (if enabled) first, then every GB_RATE.
-    rate_settings: "{{ (['baseline'] if include_baseline | bool else []) + gb_rate_values }}"
+    group_size_settings: "{{ (['baseline'] if include_baseline | bool else []) + group_size_values }}"
     server_ready_retries: 120      # x 10s = 20 minutes for the model to load
     client_run_dir: "/tmp/{{ hostvars['localhost']['run_id'] }}"
     aiperf_bin: "{{ ansible_python_interpreter | dirname }}/aiperf"
@@ -189,11 +189,11 @@
         mode: '0755'
 
     - name: Execute the sweep (every model x every setting)
-      ansible.builtin.include_tasks: vllm_pcie_bw_sweep_iteration.yml
-      loop: "{{ models_list | product(rate_settings) | list }}"
+      ansible.builtin.include_tasks: vllm_group_size_sweep_iteration.yml
+      loop: "{{ models_list | product(group_size_settings) | list }}"
       loop_control:
         loop_var: run
-        label: "{{ run[0] }} / {{ 'baseline' if run[1] | string == 'baseline' else 'gb_rate-' ~ run[1] }}"
+        label: "{{ run[0] }} / {{ 'baseline' if run[1] | string == 'baseline' else 'group-size-' ~ run[1] }}"
       vars:
         model: "{{ run[0] }}"
         setting: "{{ run[1] }}"
