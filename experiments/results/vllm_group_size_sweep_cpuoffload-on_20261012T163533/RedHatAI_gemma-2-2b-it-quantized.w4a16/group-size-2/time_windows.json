@@ -1,0 +1,10 @@
+[
+    {
+        "end": "2026-10-12T14:45:13Z",
+        "end_unix": 1791816313,
+        "file": "/tmp/vllm_group_size_sweep_cpuoffload-on_20261012T163533/RedHatAI_gemma-2-2b-it-quantized.w4a16/group-size-2/artifacts/group-size-2/RedHatAI_gemma-2-2b-it-quantized.w4a16_rps10_n200/group-size-2_raw.jsonl",
+        "requests": 200,
+        "start": "2026-10-12T14:39:44Z",
+        "start_unix": 1791815984
+    }
+]

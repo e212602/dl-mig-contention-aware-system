@@ -41,11 +41,13 @@ vllm_extra_args:
   - "--max-model-len"
   - "1024"
   - "--async-scheduling"
-  - "--limit-mm-per-prompt.video"
-  - "0"
+  - "--limit-mm-per-prompt"
+  - '{"image":0,"video":0}'
   - "--no-enable-prefix-caching"
   - "--gpu_memory_utilization"
-  - "0.9"
+  - "0.85"
+  - "--compilation-config"
+  - '{"cudagraph_mode":"NONE"}'
 
 # true  : record the failure and move on to the next (model, setting)
 # false : stop the whole sweep at the first failed iteration

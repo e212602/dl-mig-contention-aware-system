@@ -1,0 +1,43 @@
+{
+    "burst_ticks": 0,
+    "continue_on_failure": false,
+    "cpu_offload_by_model": {
+        "Qwen/Qwen2.5-1.5B-Instruct": "0.2",
+        "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8": "0.2",
+        "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16": "0.2",
+        "RedHatAI/gemma-2-2b-it-quantized.w4a16": "0.1"
+    },
+    "cpu_offload_enabled": true,
+    "git_commit": "5e285c86c69dd9858423b2164da3d37699f288a0",
+    "group_size_values": [
+        4
+    ],
+    "include_baseline": false,
+    "libcuda_log_level": "2",
+    "models": [
+        "RedHatAI/gemma-2-2b-it-quantized.w4a16"
+    ],
+    "rate_control_worker_id": 1,
+    "request_count": [
+        "200"
+    ],
+    "request_rate": [
+        "10"
+    ],
+    "run_id": "vllm_group_size_sweep_cpuoffload-on_20261012T131535",
+    "timestamp": "20261012T131535",
+    "vllm_extra_args": [
+        "--tensor-parallel-size",
+        "1",
+        "--max-model-len",
+        "1024",
+        "--async-scheduling",
+        "--limit-mm-per-prompt.video",
+        "0",
+        "--no-enable-prefix-caching",
+        "--gpu_memory_utilization",
+        "0.85",
+        "--compilation-config",
+        "{\"cudagraph_mode\":\"NONE\"}"
+    ]
+}

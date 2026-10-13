@@ -1,0 +1,10 @@
+[
+    {
+        "end": "2026-10-12T13:51:14Z",
+        "end_unix": 1791813074,
+        "file": "/tmp/vllm_group_size_sweep_cpuoffload-on_20261012T152125/Qwen_Qwen2.5-VL-3B-Instruct-AWQ/group-size-2/artifacts/group-size-2/Qwen_Qwen2.5-VL-3B-Instruct-AWQ_rps10_n200/group-size-2_raw.jsonl",
+        "requests": 200,
+        "start": "2026-10-12T13:49:42Z",
+        "start_unix": 1791812982
+    }
+]

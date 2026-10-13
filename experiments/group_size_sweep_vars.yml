@@ -3,7 +3,8 @@
 # stay in vllm_vars.yaml; request_rate/request_count stay in aiperf_vars.yaml).
 
 # Group Size List (VLLM).
-group_size_values: [2, 4, 8, 16, 32]
+# group_size_values: [2, 4, 8, 16, 32]
+group_size_values: [2]
 
 # One extra run per model with no LD_PRELOAD and no controller.
 include_baseline: false
@@ -41,11 +42,13 @@ vllm_extra_args:
   - "--max-model-len"
   - "1024"
   - "--async-scheduling"
-  - "--limit-mm-per-prompt.video"
-  - "0"
+  - "--limit-mm-per-prompt"
+  - '{"image":0,"video":0}'
   - "--no-enable-prefix-caching"
   - "--gpu_memory_utilization"
   - "0.85" # Will be changed to 0.85, because for qwen-3b model the 0.9 does not fit into vram
+  - "--compilation-config"
+  - '{"cudagraph_mode":"NONE"}'
 
 # true  : record the failure and move on to the next (model, setting)
 # false : stop the whole sweep at the first failed iteration

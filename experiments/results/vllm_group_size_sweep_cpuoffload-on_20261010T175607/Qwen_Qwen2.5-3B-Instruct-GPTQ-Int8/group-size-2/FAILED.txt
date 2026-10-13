@@ -1,0 +1,4 @@
+model:   Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8
+setting: group-size-2
+task:    Wait until the vLLM server serves its model
+message: Status code was 503 and not [200]: HTTP Error 503: Service Unavailable

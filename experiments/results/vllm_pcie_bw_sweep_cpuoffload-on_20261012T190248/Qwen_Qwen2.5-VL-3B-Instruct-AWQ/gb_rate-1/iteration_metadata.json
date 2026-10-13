@@ -1,0 +1,11 @@
+{
+    "bw_control": "on",
+    "cpu_offload_gb": "0.2",
+    "gb_rate": 1,
+    "job_name": "vllm-server-qwen25",
+    "model": "Qwen/Qwen2.5-VL-3B-Instruct-AWQ",
+    "run_id": "vllm_pcie_bw_sweep_cpuoffload-on_20261012T190248",
+    "setting": "gb_rate-1",
+    "started_at": "2026-10-12T21:18:40Z",
+    "url": "http://localhost:8080/qwen25"
+}

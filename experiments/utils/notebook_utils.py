@@ -64,8 +64,8 @@ def get_latest_experiment_dir(
                 metadata = json.load(metadata_file)
             if (
                 isinstance(metadata, dict)
-                and key in metadata["parameters"]
-                and metadata["parameters"][key] == value
+                and key in metadata
+                and metadata[key] == value
             ):
                 metadata_matching_dirs.append(directory)
         matching_dirs = metadata_matching_dirs

@@ -1,0 +1,12 @@
+{
+    "bw_control": "on",
+    "cpu_offload_gb": "0.2",
+    "gb_rate": "32",
+    "group_size": 8,
+    "job_name": "vllm-server-smollm",
+    "model": "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16",
+    "run_id": "vllm_group_size_sweep_cpuoffload-on_20261010T175607",
+    "setting": "group-size-8",
+    "started_at": "2026-10-10T16:50:22Z",
+    "url": "http://localhost:8080/smollm"
+}

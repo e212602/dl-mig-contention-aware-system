@@ -1,0 +1,10 @@
+[
+    {
+        "end": "2026-10-12T19:55:00Z",
+        "end_unix": 1791834900,
+        "file": "/tmp/vllm_pcie_bw_sweep_cpuoffload-on_20261012T190248/RedHatAI_SmolLM-1.7B-Instruct-quantized.w8a16/gb_rate-8/artifacts/gb_rate-8/RedHatAI_SmolLM-1.7B-Instruct-quantized.w8a16_rps10_n200/gb_rate-8_raw.jsonl",
+        "requests": 200,
+        "start": "2026-10-12T19:52:01Z",
+        "start_unix": 1791834721
+    }
+]

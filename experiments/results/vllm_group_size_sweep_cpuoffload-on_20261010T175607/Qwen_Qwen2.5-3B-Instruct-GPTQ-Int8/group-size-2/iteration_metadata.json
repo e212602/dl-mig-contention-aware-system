@@ -1,0 +1,12 @@
+{
+    "bw_control": "on",
+    "cpu_offload_gb": "0.2",
+    "gb_rate": "32",
+    "group_size": 2,
+    "job_name": "vllm-server-qwen25",
+    "model": "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8",
+    "run_id": "vllm_group_size_sweep_cpuoffload-on_20261010T175607",
+    "setting": "group-size-2",
+    "started_at": "2026-10-10T17:37:03Z",
+    "url": "http://localhost:8080/qwen25"
+}

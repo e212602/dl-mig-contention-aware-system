@@ -1,0 +1,12 @@
+{
+    "bw_control": "on",
+    "cpu_offload_gb": "0.1",
+    "gb_rate": "32",
+    "group_size": 4,
+    "job_name": "vllm-server-gemma",
+    "model": "RedHatAI/gemma-2-2b-it-quantized.w4a16",
+    "run_id": "vllm_group_size_sweep_cpuoffload-on_20261010T175607",
+    "setting": "group-size-4",
+    "started_at": "2026-10-10T16:05:21Z",
+    "url": "http://localhost:8080/gemma"
+}

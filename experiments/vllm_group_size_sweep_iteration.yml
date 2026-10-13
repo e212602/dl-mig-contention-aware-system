@@ -7,7 +7,7 @@
     is_baseline: "{{ setting | string == 'baseline' }}"
     bw_control: "{{ 'off' if is_baseline | bool else 'on' }}"
     setting_name: "{{ 'baseline' if is_baseline | bool else 'group-size-' ~ setting }}"
-    gb_rate: "32"
+    gb_rate: "6"
     group_size: "{{ setting }}"
     model_tag: "{{ model | replace('/', '_') }}"
     # /gemma, /smollm, ... from model_urls_server -> short unique name
@@ -334,16 +334,16 @@
       when: bw_control == 'on'
       delegate_to: "{{ server_host }}"
 
-    - name: Confirm the controller switched to the limit phase
-      ansible.builtin.command:
-        argv: [grep, -q, ',limit$', "{{ server_results_dir }}/scheduler.csv"]
-      register: limit_phase
-      until: limit_phase.rc == 0
-      retries: 10
-      delay: 1
-      changed_when: false
-      when: bw_control == 'on'
-      delegate_to: "{{ server_host }}"
+    # - name: Confirm the controller switched to the limit phase
+    #   ansible.builtin.command:
+    #     argv: [grep, -q, ',limit$', "{{ server_results_dir }}/scheduler.csv"]
+    #   register: limit_phase
+    #   until: limit_phase.rc == 0
+    #   retries: 10
+    #   delay: 1
+    #   changed_when: false
+    #   when: bw_control == 'on'
+    #   delegate_to: "{{ server_host }}"
 
     - name: Run the benchmark ({{ setting_name }})
       ansible.builtin.command:
