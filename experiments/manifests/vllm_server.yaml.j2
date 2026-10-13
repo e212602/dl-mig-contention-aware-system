@@ -77,10 +77,10 @@ spec:
               name: hf-cache
             - mountPath: /dev/shm
               name: dshm
+{% if bw_control == 'on' %}
             - mountPath: /mnt
               name: vgpu
               readOnly: true
-{% if bw_control == 'on' %}
             - mountPath: /tmp/rate-control
               name: rate-control
               readOnly: false
@@ -104,11 +104,11 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 16Gi
+{% if bw_control == 'on' %}
         - name: vgpu
           hostPath:
             path: /home/ubuntu/work/projects/dl-mig-contention-aware-system/HAMi-core/build
             type: Directory
-{% if bw_control == 'on' %}
         - name: rate-control
           hostPath:
             path: {{ rate_control_dir }}
