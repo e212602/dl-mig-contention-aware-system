@@ -10,6 +10,11 @@ spec:
     - name: controller
       image: e8113/controller:latest
       imagePullPolicy: Never
+{% if scheduler_policy | default('') | length > 0 %}
+      args:
+        - "--policy"
+        - "{{ scheduler_policy }}"
+{% endif %}
       env:
         - name: GB_RATE
           value: "{{ gb_rate }}"
@@ -24,6 +29,10 @@ spec:
           value: "{{ burst_ticks }}"
         - name: SCHEDULER_LOG
           value: "/tmp/results/{{ iter_rel }}/scheduler.csv"
+{% if scheduler_policy | default('') | length > 0 %}
+        - name: BW_ALLOC_FILE
+          value: "/tmp/rate-control/static_ilp.yaml"
+{% endif %}
       resources:
         limits:
           cpu: "2"
@@ -35,6 +44,11 @@ spec:
         - mountPath: /tmp/results
           name: results
           readOnly: false
+{% if scheduler_policy | default('') | length > 0 %}
+        - mountPath: /tmp/rate-control/static_ilp.yaml
+          name: static-ilp
+          readOnly: true
+{% endif %}
   volumes:
     - name: rate-control
       hostPath:
@@ -44,3 +58,9 @@ spec:
       hostPath:
         path: {{ results_root }}
         type: DirectoryOrCreate
+{% if scheduler_policy | default('') | length > 0 %}
+    - name: static-ilp
+      hostPath:
+        path: {{ rate_control_dir }}/static_ilp.yaml
+        type: File
+{% endif %}

@@ -1,0 +1,372 @@
+- name: Run the {{ setting_name }} comparison
+  block:
+    - name: Remove resources from a previous comparison
+      ansible.builtin.include_tasks: concurrent_static_ILP_vs_baseline_cleanup.yml
+
+    - name: Create rate-control directory
+      ansible.builtin.file:
+        path: "{{ rate_control_dir }}"
+        state: directory
+        mode: "0755"
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Install static bandwidth allocation file
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/manifests/static_ilp.yaml"
+        dest: "{{ rate_control_dir }}/static_ilp.yaml"
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      delegate_to: "{{ server_host }}"
+      when: scheduler_enabled | bool
+
+    - name: Create server results directory
+      ansible.builtin.file:
+        path: "{{ server_results_dir }}"
+        state: directory
+        mode: "0755"
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Create per-model output directories
+      ansible.builtin.file:
+        path: "{{ local_run_dir }}/{{ setting_name }}/{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ model_runs }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      delegate_to: localhost
+
+    - name: Create per-model client artifact directories
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}/{{ setting_name }}/{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ model_runs }}"
+      loop_control:
+        label: "{{ item[0] }}"
+
+    - name: Record comparison metadata
+      ansible.builtin.copy:
+        dest: "{{ local_run_dir }}/{{ setting_name }}/run_metadata.json"
+        content: "{{ comparison_metadata | to_nice_json }}"
+        mode: "0644"
+      vars:
+        comparison_metadata:
+          run_id: "{{ run_id }}"
+          setting: "{{ setting_name }}"
+          scheduler_enabled: "{{ scheduler_enabled | bool }}"
+          scheduler_policy: "{{ scheduler_policy if scheduler_enabled | bool else 'GPU default PCIe scheduler' }}"
+          static_bandwidth_file: "{{ 'static_ilp.yaml' if scheduler_enabled | bool else none }}"
+          static_worker_allocations: "{{ {'1': 8, '2': 4, '3': 8, '4': 4} if scheduler_enabled | bool else none }}"
+          models: "{{ models_list }}"
+          request_rate: "{{ request_rate }}"
+          request_count: "{{ request_count }}"
+          worker_ids: "{{ rate_control_worker_ids }}"
+          server_worker_mapping: "{{ model_runs }}"
+          started_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+      delegate_to: localhost
+
+    - name: Create all vLLM servers
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        definition: "{{ lookup('ansible.builtin.template', vllm_template_file) | from_yaml_all | list }}"
+      vars:
+        model: "{{ item[0] }}"
+        model_short: "{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        job_name: "{{ vllm_job_prefix }}{{ model_short }}"
+        service_name: "vllm-service-{{ model_short }}"
+        ingress_name: "vllm-ingress-{{ model_short }}"
+        url_path: "/{{ model_short }}"
+        bw_control: "{{ 'on' if scheduler_enabled | bool else 'off' }}"
+        group_size: "2"
+        cpu_offload_target: "{{ cpu_offload_by_model[item[0]] if cpu_offload_enabled | bool else cpu_offload_default }}"
+        rate_control_worker_id: "{{ item[1] }}"
+      loop: "{{ model_runs }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Create the SILP scheduler
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        definition: "{{ lookup('ansible.builtin.template', controller_template_file) | from_yaml }}"
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 300
+      vars:
+        controller_pod_name: controller
+        gb_rate: "8"
+        rate_control_worker_id: "{{ rate_control_worker_ids | join(',') }}"
+        burst_ticks: 0
+        iter_rel: "{{ run_id }}/{{ setting_name }}"
+      when: scheduler_enabled | bool
+      register: controller_pod
+      delegate_to: "{{ server_host }}"
+
+    - name: Wait for the SILP scheduler to initialize rate-control state
+      ansible.builtin.stat:
+        path: "{{ rate_control_dir }}/{{ ready_file_name }}"
+      register: ready_stat
+      until: ready_stat.stat.exists
+      retries: 30
+      delay: 2
+      when: scheduler_enabled | bool
+      delegate_to: "{{ server_host }}"
+
+    - name: Wait for every vLLM server to serve its model
+      ansible.builtin.uri:
+        url: "{{ model_urls_server[item[0]] }}/v1/models"
+        status_code: 200
+        return_content: true
+        timeout: 5
+      register: vllm_ready
+      until:
+        - vllm_ready.status is defined
+        - vllm_ready.status == 200
+        - vllm_ready.json is defined
+        - item[0] in (vllm_ready.json.data | map(attribute='id') | list)
+      retries: "{{ server_ready_retries }}"
+      delay: 10
+      loop: "{{ model_runs }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Warm up every model before benchmarking
+      ansible.builtin.uri:
+        url: "{{ model_urls[item[0]] }}/v1/chat/completions"
+        method: POST
+        body_format: json
+        body:
+          model: "{{ item[0] }}"
+          messages:
+            - role: user
+              content: "Say hello."
+          max_tokens: 32
+        status_code: 200
+        timeout: 120
+      loop: "{{ model_runs | product(range(warmup_requests | int) | list) | list }}"
+      loop_control:
+        label: "{{ item[0][0] }} warm-up #{{ item[1] }}"
+
+    - name: Save final Kubernetes Jobs and Pods
+      block:
+        - name: Fetch all Jobs
+          kubernetes.core.k8s_info:
+            api_version: batch/v1
+            kind: Job
+            namespace: "{{ k8s_namespace }}"
+          register: k8s_jobs
+          delegate_to: "{{ server_host }}"
+
+        - name: Fetch all Pods
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Pod
+            namespace: "{{ k8s_namespace }}"
+          register: k8s_pods
+          delegate_to: "{{ server_host }}"
+
+        - name: Save server manifests
+          ansible.builtin.copy:
+            content: |
+              {% for resource in k8s_jobs.resources %}
+              ---
+              {{ resource | to_nice_yaml }}
+              {% endfor %}
+            dest: "{{ local_run_dir }}/{{ setting_name }}/server_manifests.yaml"
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Save server Pods
+          ansible.builtin.copy:
+            content: |
+              {% for resource in k8s_pods.resources %}
+              ---
+              {{ resource | to_nice_yaml }}
+              {% endfor %}
+            dest: "{{ local_run_dir }}/{{ setting_name }}/server_pods.yaml"
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Save scheduler Pod manifest
+          ansible.builtin.copy:
+            content: "{{ controller_pod.result | to_nice_yaml }}"
+            dest: "{{ local_run_dir }}/{{ setting_name }}/controller_pod.yaml"
+            mode: "0644"
+          when: scheduler_enabled | bool
+          delegate_to: localhost
+
+    - name: Start the static scheduler measurement phase
+      ansible.builtin.file:
+        path: "{{ rate_control_dir }}/{{ go_file_name }}"
+        state: touch
+        mode: "0644"
+      when: scheduler_enabled | bool
+      delegate_to: "{{ server_host }}"
+
+    - name: Generate benchmark scripts for every model
+      ansible.builtin.copy:
+        dest: "{{ iter_client_dir }}/run_benchmark.sh"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "{{ iter_client_dir }}"
+          mkdir -p "artifacts/{{ setting_name }}"
+
+          {% for rps in request_rate %}
+          {% for count in request_count %}
+          "{{ aiperf_bin }}" profile \
+            --model "{{ model }}" \
+            --url "{{ model_urls[model] }}" \
+            --endpoint-type chat \
+            --streaming \
+            --request-rate {{ rps }} \
+            --request-count {{ count }} \
+            --tokenizer "{{ model }}" \
+            {{ aiperf_artifact_flag }} "{{ iter_client_dir }}/artifacts/{{ setting_name }}/{{ model_tag }}_rps{{ rps }}_n{{ count }}" \
+            --profile-export-prefix "{{ setting_name }}" \
+            --export-level raw
+
+          {% endfor %}
+          {% endfor %}
+        mode: "0755"
+      vars:
+        model: "{{ item[0] }}"
+        model_tag: "{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        iter_client_dir: "{{ client_run_dir }}/{{ setting_name }}/{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+      loop: "{{ model_runs }}"
+      loop_control:
+        label: "{{ item[0] }}"
+
+    - name: Launch every model benchmark concurrently
+      ansible.builtin.command:
+        cmd: "{{ iter_client_dir }}/run_benchmark.sh"
+      async: "{{ benchmark_timeout_seconds }}"
+      poll: 0
+      vars:
+        iter_client_dir: "{{ client_run_dir }}/{{ setting_name }}/{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+      loop: "{{ model_runs }}"
+      loop_control:
+        label: "{{ item[0] }}"
+      register: benchmark_jobs
+
+    - name: Wait for all concurrent benchmarks to finish
+      ansible.builtin.async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: benchmark_status
+      until: benchmark_status.finished
+      retries: "{{ (benchmark_timeout_seconds | int // 30) + 5 }}"
+      delay: 30
+      loop: "{{ benchmark_jobs.results }}"
+      loop_control:
+        label: "{{ item.item[0] }}"
+
+    - name: Collect system metrics for every benchmark
+      ansible.builtin.include_tasks: collect_metrics_sweep.yml
+      loop: "{{ model_runs }}"
+      loop_control:
+        loop_var: metric_model
+        label: "{{ metric_model[0] }}"
+      vars:
+        model: "{{ metric_model[0] }}"
+        model_tag: "{{ model_urls_server[metric_model[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        iter_local_dir: "{{ local_run_dir }}/{{ setting_name }}/{{ model_urls_server[metric_model[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        iter_client_dir: "{{ client_run_dir }}/{{ setting_name }}/{{ model_urls_server[metric_model[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        iter_metrics_dir: "/tmp/{{ run_id }}_metrics/{{ setting_name }}/{{ model_urls_server[metric_model[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        server_results_dir: "{{ results_root }}/{{ run_id }}/{{ setting_name }}/{{ model_urls_server[metric_model[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+
+    - name: Compress each model's aiperf artifacts
+      ansible.builtin.command:
+        cmd: "tar -czf {{ iter_client_dir }}/artifacts.tar.gz -C {{ iter_client_dir }} artifacts"
+      vars:
+        iter_client_dir: "{{ client_run_dir }}/{{ setting_name }}/{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+      loop: "{{ model_runs }}"
+      loop_control:
+        label: "{{ item[0] }}"
+
+    - name: Fetch each model's aiperf artifacts
+      ansible.builtin.fetch:
+        src: "{{ iter_client_dir }}/artifacts.tar.gz"
+        dest: "{{ iter_local_dir }}/artifacts.tar.gz"
+        flat: true
+      vars:
+        model_short: "{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+        iter_client_dir: "{{ client_run_dir }}/{{ setting_name }}/{{ model_short }}"
+        iter_local_dir: "{{ local_run_dir }}/{{ setting_name }}/{{ model_short }}"
+      loop: "{{ model_runs }}"
+      loop_control:
+        label: "{{ item[0] }}"
+
+    - name: Check for scheduler results
+      ansible.builtin.stat:
+        path: "{{ server_results_dir }}"
+      register: scheduler_results_stat
+      become: true
+      delegate_to: "{{ server_host }}"
+      when: scheduler_enabled | bool
+
+    - name: Compress scheduler results
+      ansible.builtin.command:
+        cmd: "tar -czf {{ server_results_dir }}.tar.gz -C {{ server_results_dir }} ."
+      become: true
+      delegate_to: "{{ server_host }}"
+      when:
+        - scheduler_enabled | bool
+        - scheduler_results_stat.stat.exists
+
+    - name: Fetch scheduler results
+      ansible.builtin.fetch:
+        src: "{{ server_results_dir }}.tar.gz"
+        dest: "{{ local_run_dir }}/{{ setting_name }}/scheduler_results.tar.gz"
+        flat: true
+      become: true
+      delegate_to: "{{ server_host }}"
+      when:
+        - scheduler_enabled | bool
+        - scheduler_results_stat.stat.exists
+
+    - name: Remove scheduler result files from the server
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ server_results_dir }}"
+        - "{{ server_results_dir }}.tar.gz"
+      become: true
+      delegate_to: "{{ server_host }}"
+      when: scheduler_enabled | bool
+
+    - name: Remove client-side temporary benchmark files
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}/{{ setting_name }}"
+        state: absent
+
+  rescue:
+    - name: Save failure details
+      ansible.builtin.copy:
+        dest: "{{ local_run_dir }}/{{ setting_name }}/FAILED.txt"
+        content: |
+          task: {{ ansible_failed_task.name | default('unknown') }}
+          message: {{ ansible_failed_result.msg | default('see Ansible output') }}
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Fail the current comparison
+      ansible.builtin.fail:
+        msg: >-
+          {{ setting_name }} failed at task
+          "{{ ansible_failed_task.name | default('unknown') }}".
+          Partial outputs are retained in {{ local_run_dir }}/{{ setting_name }}.
+
+  always:
+    - name: Clean up this comparison
+      ansible.builtin.include_tasks: concurrent_static_ILP_vs_baseline_cleanup.yml

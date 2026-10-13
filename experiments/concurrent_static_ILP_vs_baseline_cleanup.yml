@@ -1,0 +1,72 @@
+- name: Remove the controller pod
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Pod
+    name: controller
+    namespace: "{{ k8s_namespace }}"
+    wait: true
+    wait_timeout: 120
+  delegate_to: "{{ server_host }}"
+
+- name: Remove vLLM jobs and pods
+  kubernetes.core.k8s:
+    state: absent
+    api_version: batch/v1
+    kind: Job
+    name: "{{ vllm_job_prefix }}{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+    namespace: "{{ k8s_namespace }}"
+    delete_options:
+      propagationPolicy: Foreground
+    wait: true
+    wait_timeout: 300
+  loop: "{{ models_list | zip(rate_control_worker_ids) | list }}"
+  loop_control:
+    label: "{{ item[0] }}"
+  delegate_to: "{{ server_host }}"
+
+- name: Remove leftover vLLM pods
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Pod
+    namespace: "{{ k8s_namespace }}"
+    label_selectors:
+      - "job-name={{ vllm_job_prefix }}{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+    wait: true
+    wait_timeout: 300
+  loop: "{{ models_list | zip(rate_control_worker_ids) | list }}"
+  loop_control:
+    label: "{{ item[0] }}"
+  delegate_to: "{{ server_host }}"
+
+- name: Remove vLLM Services
+  kubernetes.core.k8s:
+    state: absent
+    api_version: v1
+    kind: Service
+    name: "vllm-service-{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+    namespace: "{{ k8s_namespace }}"
+  loop: "{{ models_list | zip(rate_control_worker_ids) | list }}"
+  loop_control:
+    label: "{{ item[0] }}"
+  delegate_to: "{{ server_host }}"
+
+- name: Remove vLLM Ingresses
+  kubernetes.core.k8s:
+    state: absent
+    api_version: networking.k8s.io/v1
+    kind: Ingress
+    name: "vllm-ingress-{{ model_urls_server[item[0]] | urlsplit('path') | regex_replace('^/+|/+$', '') }}"
+    namespace: "{{ k8s_namespace }}"
+  loop: "{{ models_list | zip(rate_control_worker_ids) | list }}"
+  loop_control:
+    label: "{{ item[0] }}"
+  delegate_to: "{{ server_host }}"
+
+- name: Remove rate-control files
+  ansible.builtin.file:
+    path: "{{ rate_control_dir }}"
+    state: absent
+  become: true
+  delegate_to: "{{ server_host }}"

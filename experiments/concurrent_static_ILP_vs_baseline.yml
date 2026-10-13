@@ -1,0 +1,178 @@
+# Run all configured vLLM models and their aiperf benchmarks concurrently in
+# two conditions: the GPU's default PCIe scheduler, then static ILP scheduling.
+#
+# Required env: SERVER_ID and CLIENT_ID (Ansible inventory hosts)
+# Optional env: CPU_OFFLOAD_ENABLE=Yes|No (unset == No)
+# Prerequisite: client SSH tunnel to server port 80 on localhost:8080.
+- name: Prepare concurrent static ILP experiment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vllm_vars.yaml
+    - aiperf_vars.yaml
+    - pcie_sweep_vars.yaml
+    - concurrent_static_ILP_vs_baseline_vars.yml
+  vars:
+    experiment_name: concurrent_static_ILP_vs_baseline
+    output_base_dir: "{{ lookup('env', 'PWD') }}/results"
+    cpu_offload_env: "{{ lookup('env', 'CPU_OFFLOAD_ENABLE') | lower | trim }}"
+    server_goarch: amd64
+
+  tasks:
+    - name: Validate experiment configuration
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'SERVER_ID') | length > 0
+          - lookup('env', 'CLIENT_ID') | length > 0
+          - cpu_offload_env in ['', 'yes', 'no']
+          - models_list | length == 4
+          - models_list | unique | length == 4
+          - models_list | difference(cpu_offload_by_model.keys() | list) | length == 0
+          - models_list | difference(model_urls.keys() | list) | length == 0
+          - models_list | difference(model_urls_server.keys() | list) | length == 0
+          - (model_urls_server.values() | map('urlsplit', 'path') | map('regex_replace', '^/+|/+$', '') | unique | list | length) == 4
+          - request_rate | length > 0
+          - request_count | length > 0
+          - rate_control_worker_ids == [1, 2, 3, 4]
+        fail_msg: >-
+          Export SERVER_ID and CLIENT_ID, configure four uniquely named models
+          with CPU-offload and URL entries, set valid benchmark request rates
+          and counts, and keep worker IDs at [1, 2, 3, 4].
+
+    - name: Resolve CPU offload switch
+      ansible.builtin.set_fact:
+        cpu_offload_enabled: "{{ cpu_offload_env == 'yes' }}"
+
+    - name: Set experiment identity
+      ansible.builtin.set_fact:
+        timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}"
+
+    - name: Create experiment output directory
+      ansible.builtin.set_fact:
+        run_id: "{{ experiment_name }}_cpuoffload-{{ 'on' if cpu_offload_enabled | bool else 'off' }}_{{ timestamp }}"
+        run_dir: "{{ output_base_dir }}/{{ experiment_name }}_cpuoffload-{{ 'on' if cpu_offload_enabled | bool else 'off' }}_{{ timestamp }}"
+
+    - name: Create local output directory
+      ansible.builtin.file:
+        path: "{{ run_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Build Prometheus scrapper for the server architecture
+      ansible.builtin.command:
+        cmd: go build -o bin/scrapper utils/scrapper.go
+      args:
+        chdir: "{{ playbook_dir }}"
+      environment:
+        GOOS: linux
+        GOARCH: "{{ server_goarch }}"
+        CGO_ENABLED: "0"
+      changed_when: false
+
+    - name: Capture repository revision
+      ansible.builtin.command:
+        cmd: git rev-parse HEAD
+      args:
+        chdir: "{{ playbook_dir }}"
+      register: git_commit
+      changed_when: false
+
+    - name: Write experiment metadata
+      ansible.builtin.copy:
+        dest: "{{ run_dir }}/run_metadata.json"
+        content: "{{ experiment_metadata | to_nice_json }}"
+        mode: "0644"
+      vars:
+        experiment_metadata:
+          experiment_name: "{{ experiment_name }}"
+          run_id: "{{ run_id }}"
+          timestamp: "{{ timestamp }}"
+          git_commit: "{{ git_commit.stdout }}"
+          cpu_offload_enabled: "{{ cpu_offload_enabled | bool }}"
+          models: "{{ models_list }}"
+          worker_ids: "{{ rate_control_worker_ids }}"
+          server_worker_mapping: "{{ model_runs }}"
+          request_rate: "{{ request_rate }}"
+          request_count: "{{ request_count }}"
+          comparison_runs: ["baseline", "SILP"]
+          static_bandwidth_file: manifests/static_ilp.yaml
+
+- name: Run both concurrent experiment conditions
+  hosts: "{{ lookup('env', 'CLIENT_ID') }}"
+  gather_facts: false
+  vars_files:
+    - vllm_vars.yaml
+    - aiperf_vars.yaml
+    - pcie_sweep_vars.yaml
+    - concurrent_static_ILP_vs_baseline_vars.yml
+  vars:
+    server_host: "{{ lookup('env', 'SERVER_ID') }}"
+    k8s_namespace: default
+    run_id: "{{ hostvars['localhost']['run_id'] }}"
+    local_run_dir: "{{ hostvars['localhost']['run_dir'] }}"
+    cpu_offload_enabled: "{{ hostvars['localhost']['cpu_offload_enabled'] }}"
+    model_runs: "{{ models_list | zip(rate_control_worker_ids) | list }}"
+    controller_pod_name: controller
+    ready_file_name: "ready-ops-1"
+    go_file_name: "go-ops-1"
+    vllm_template_file: "{{ playbook_dir }}/manifests/vllm_server.yaml.j2"
+    controller_template_file: "{{ playbook_dir }}/manifests/controller_sweep.yaml.j2"
+    results_root: /tmp/results
+    server_results_dir: "{{ results_root }}/{{ run_id }}/{{ setting_name }}"
+    client_run_dir: "/tmp/{{ run_id }}"
+    aiperf_bin: "{{ ansible_python_interpreter | dirname }}/aiperf"
+    aiperf_artifact_flag: "--artifact-dir"
+    benchmark_timeout_seconds: 7200
+    server_ready_retries: 120
+    warmup_requests: 5
+    metrics_step: 5s
+    metrics_pad_seconds: 5
+    prometheus_settle_seconds: 30
+    prometheus_namespace: monitoring
+    prometheus_service: prometheus-operated
+    prometheus_service_port: 9090
+    prometheus_local_port: 9090
+
+  tasks:
+    - name: Validate client prerequisites
+      ansible.builtin.assert:
+        that:
+          - ansible_python_interpreter is defined
+        fail_msg: "Set ansible_python_interpreter for the client host."
+
+    - name: Check aiperf exists on the client
+      ansible.builtin.stat:
+        path: "{{ aiperf_bin }}"
+      register: aiperf_stat
+      failed_when: not aiperf_stat.stat.exists
+
+    - name: Create client run directory
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy time-boundary utility to the client
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/utils/get_time_boundaries.py"
+        dest: "{{ client_run_dir }}/get_time_boundaries.py"
+        mode: "0755"
+
+    - name: Run baseline followed by SILP
+      ansible.builtin.include_tasks: concurrent_static_ILP_vs_baseline_iteration.yml
+      loop:
+        - baseline
+        - SILP
+      loop_control:
+        loop_var: comparison_setting
+        label: "{{ comparison_setting }}"
+      vars:
+        setting_name: "{{ comparison_setting }}"
+        scheduler_enabled: "{{ comparison_setting == 'SILP' }}"
+        scheduler_policy: "{{ 'SILP' if comparison_setting == 'SILP' else '' }}"
+
+    - name: Remove client run directory
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}"
+        state: absent
