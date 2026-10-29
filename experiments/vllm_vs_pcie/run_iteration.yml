@@ -1,0 +1,544 @@
+---
+- name: Run one vLLM and PCIe stress condition
+  vars:
+    model_tag: "{{ model_config.model_id | replace('/', '_') }}"
+    setting_name: "vllm-bw-{{ bw }}_stress-workers-{{ num_pcie_stress_workers }}_stress-bw-{{ bw_pcie_stress }}"
+    pcie_worker_numbers: "{{ range((worker_id_base | int) + 1, (worker_id_base | int) + (num_pcie_stress_workers | int) + 1) | list }}"
+    controlled_worker_ids: "{{ [worker_id_base | int] + pcie_worker_numbers }}"
+    vllm_rate_worker_id: "{{ worker_id_base | int }}"
+    ready_file_name: "ready-ops-{{ worker_id_base }}"
+    go_file_name: "go-ops-{{ worker_id_base }}"
+    bw_alloc_file_name: "{{ run_id }}_{{ setting_name }}.yaml"
+    controller_name: "{{ controller_pod_name }}"
+    model_route_path: "/vpcie-{{ model_config.slug }}-{{ worker_id_base }}"
+    vllm_job_name: "vllm-server-{{ model_config.slug }}-{{ vllm_rate_worker_id }}"
+    vllm_service_name: "vllm-service-{{ model_config.slug }}-{{ vllm_rate_worker_id }}"
+    vllm_ingress_name: "vllm-ingress-{{ model_config.slug }}-{{ vllm_rate_worker_id }}"
+    iter_rel: "vllm_vs_pcie/{{ run_id }}/{{ model_config.slug }}/{{ setting_name }}"
+    iter_local_dir: "{{ local_run_dir }}/{{ model_config.slug }}/{{ setting_name }}"
+    iter_client_dir: "{{ client_run_dir }}/{{ model_config.slug }}/{{ setting_name }}"
+    server_results_dir: "{{ results_root }}/{{ iter_rel }}"
+    iter_metrics_dir: "{{ server_metrics_root }}/{{ iter_rel }}"
+    model_server_url: "http://localhost:80{{ model_route_path }}"
+    model_client_url: "http://localhost:8080{{ model_route_path }}"
+    aiperf_artifact_dir: "{{ iter_client_dir }}/artifacts/{{ setting_name }}/{{ model_tag }}_rps{{ request_rate }}_n{{ request_count }}"
+    aiperf_raw_file: "{{ aiperf_artifact_dir }}/{{ setting_name }}_raw.jsonl"
+  block:
+    - name: Create the local output directory
+      ansible.builtin.file:
+        path: "{{ iter_local_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: Create client output directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ iter_client_dir }}"
+        - "{{ aiperf_artifact_dir }}"
+
+    - name: Record iteration metadata
+      ansible.builtin.copy:
+        dest: "{{ iter_local_dir }}/iteration_metadata.json"
+        mode: "0644"
+        content: "{{ iteration_metadata | to_nice_json }}"
+      vars:
+        iteration_metadata:
+          run_id: "{{ run_id }}"
+          model: "{{ model_config.model_id }}"
+          source_manifest: "{{ model_config.source_manifest }}"
+          vllm_bandwidth_gbps: "{{ bw }}"
+          pcie_stress_workers: "{{ num_pcie_stress_workers }}"
+          pcie_stress_bandwidth_gbps_per_worker: "{{ bw_pcie_stress }}"
+          worker_ids: "{{ controlled_worker_ids }}"
+          scheduler_policy: SILP
+          request_rate: "{{ request_rate }}"
+          request_count: "{{ request_count }}"
+      delegate_to: localhost
+
+    - name: Create the rate-control directory on the server
+      ansible.builtin.file:
+        path: "{{ rate_control_dir }}"
+        state: directory
+        mode: "0755"
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove stale rate-control files for this run's worker IDs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: >-
+        {{
+          controlled_worker_ids | map('regex_replace', '^(.*)$', rate_control_dir ~ '/rate-control-ops-\\1') | list
+          + [rate_control_dir ~ '/' ~ ready_file_name, rate_control_dir ~ '/' ~ go_file_name]
+        }}
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Write per-worker SILP bandwidth allocation
+      ansible.builtin.copy:
+        dest: "{{ rate_control_dir }}/{{ bw_alloc_file_name }}"
+        mode: "0644"
+        content: |
+          /tmp/rate-control/rate-control-ops-{{ vllm_rate_worker_id }}:
+            - {{ bw }}
+          {% for worker_id in pcie_worker_numbers %}
+          /tmp/rate-control/rate-control-ops-{{ worker_id }}:
+            - {{ bw_pcie_stress }}
+          {% endfor %}
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Create server result directory
+      ansible.builtin.file:
+        path: "{{ server_results_dir }}"
+        state: directory
+        mode: "0775"
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Create the SILP controller
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        definition: "{{ lookup('ansible.builtin.template', controller_template_file) | from_yaml }}"
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 300
+      vars:
+        controller_pod_name: "{{ controller_name }}"
+        worker_ids: "{{ controlled_worker_ids }}"
+      register: controller_pod
+      delegate_to: "{{ server_host }}"
+
+    - name: Confirm that the controller selected SILP
+      kubernetes.core.k8s_log:
+        api_version: v1
+        kind: Pod
+        name: "{{ controller_name }}"
+        namespace: "{{ k8s_namespace }}"
+      register: controller_log
+      failed_when: "('Selected Scheduling Policy : SILP') not in controller_log.log"
+      delegate_to: "{{ server_host }}"
+
+    - name: Wait for controller initialization
+      ansible.builtin.stat:
+        path: "{{ rate_control_dir }}/{{ ready_file_name }}"
+      register: controller_ready_file
+      until: controller_ready_file.stat.exists
+      retries: 30
+      delay: 2
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Create the vLLM Job, Service, and Ingress
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        definition: "{{ lookup('ansible.builtin.template', vllm_template_file) | from_yaml_all | list }}"
+      vars:
+        vllm_worker_id: "{{ vllm_rate_worker_id }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Wait for the vLLM server to load its model
+      ansible.builtin.uri:
+        url: "{{ model_server_url }}/v1/models"
+        status_code: 200
+        return_content: true
+        timeout: 5
+      register: vllm_ready
+      until:
+        - vllm_ready.status is defined
+        - vllm_ready.status == 200
+        - vllm_ready.json is defined
+        - model_config.model_id in (vllm_ready.json.data | map(attribute='id') | list)
+      retries: "{{ server_ready_retries }}"
+      delay: 10
+      delegate_to: "{{ server_host }}"
+
+    - name: Create PCIe stress Jobs
+      kubernetes.core.k8s:
+        state: present
+        namespace: "{{ k8s_namespace }}"
+        definition: "{{ lookup('ansible.builtin.template', pcie_stress_template_file) | from_yaml }}"
+      vars:
+        worker_number: "{{ item }}"
+      loop: "{{ pcie_worker_numbers }}"
+      loop_control:
+        label: "worker {{ item }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Wait for each PCIe stress Job to be running
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ k8s_namespace }}"
+        label_selectors:
+          - "job-name=pcie-stress-{{ item }}"
+      register: pcie_job_status
+      until: >-
+        pcie_job_status.resources | length > 0
+        and pcie_job_status.resources[0].status.phase == 'Running'
+      retries: 90
+      delay: 2
+      failed_when: >-
+        pcie_job_status.resources | selectattr('status.phase', 'equalto', 'Failed') | list | length > 0
+      loop: "{{ pcie_worker_numbers }}"
+      loop_control:
+        label: "worker {{ item }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Verify the benchmark endpoint is reachable from the client
+      ansible.builtin.uri:
+        url: "{{ model_client_url }}/v1/models"
+        status_code: 200
+        return_content: true
+        timeout: 5
+      register: client_model_ready
+      until:
+        - client_model_ready.status is defined
+        - client_model_ready.status == 200
+        - client_model_ready.json is defined
+        - model_config.model_id in (client_model_ready.json.data | map(attribute='id') | list)
+      retries: 10
+      delay: 2
+
+    - name: Warm up the model before enabling the measured bandwidth limit
+      ansible.builtin.uri:
+        url: "{{ model_client_url }}/v1/chat/completions"
+        method: POST
+        body_format: json
+        body:
+          model: "{{ model_config.model_id }}"
+          messages:
+            - role: user
+              content: "Say hello."
+          max_tokens: 32
+        status_code: 200
+        timeout: 120
+      loop: "{{ range(warmup_requests | int) | list }}"
+      loop_control:
+        label: "warm-up #{{ item }}"
+
+    - name: Start the measured rate-limited phase
+      ansible.builtin.file:
+        path: "{{ rate_control_dir }}/{{ go_file_name }}"
+        state: touch
+        mode: "0644"
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Run aiperf for this vLLM and PCIe contention condition
+      ansible.builtin.command:
+        argv:
+          - "{{ aiperf_bin }}"
+          - profile
+          - --model
+          - "{{ model_config.model_id }}"
+          - --url
+          - "{{ model_client_url }}"
+          - --endpoint-type
+          - chat
+          - --streaming
+          - --request-rate
+          - "{{ request_rate | string }}"
+          - --request-count
+          - "{{ request_count | string }}"
+          - --warmup-request-count
+          - "{{ aiperf_warmup_request_count | string }}"
+          - --random-seed
+          - "42"
+          - --synthetic-input-tokens-mean
+          - "256"
+          - --synthetic-input-tokens-stddev
+          - "0"
+          - --output-tokens-mean
+          - "256"
+          - --output-tokens-stddev
+          - "0"
+          - --extra-inputs
+          - "ignore_eos:true"
+          - --extra-inputs
+          - "min_tokens:256"
+          - --extra-inputs
+          - "max_tokens:256"
+          - --extra-inputs
+          - "temperature:0"
+          - --tokenizer
+          - "{{ model_config.model_id }}"
+          - --artifact-dir
+          - "{{ aiperf_artifact_dir }}"
+          - --profile-export-prefix
+          - "{{ setting_name }}"
+          - --export-level
+          - raw
+      async: "{{ benchmark_timeout_seconds }}"
+      poll: 30
+
+    - name: Confirm the controller remained healthy during the benchmark
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        name: "{{ controller_name }}"
+        namespace: "{{ k8s_namespace }}"
+      register: controller_after
+      failed_when: >-
+        controller_after.resources | length != 1
+        or controller_after.resources[0].status.phase != 'Running'
+        or (controller_after.resources[0].status.containerStatuses[0].restartCount | default(0) | int) > 0
+      delegate_to: "{{ server_host }}"
+
+    - name: Confirm every PCIe stress Job overlapped the benchmark
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: Job
+        name: "pcie-stress-{{ item }}"
+        namespace: "{{ k8s_namespace }}"
+      register: pcie_job_after
+      failed_when: >-
+        pcie_job_after.resources | length != 1
+        or (pcie_job_after.resources[0].status.active | default(0) | int) < 1
+      loop: "{{ pcie_worker_numbers }}"
+      loop_control:
+        label: "worker {{ item }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Archive aiperf artifacts on the client
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -czf
+          - "{{ iter_client_dir }}/aiperf_artifacts.tar.gz"
+          - -C
+          - "{{ iter_client_dir }}"
+          - artifacts
+
+    - name: Fetch aiperf artifacts
+      ansible.builtin.fetch:
+        src: "{{ iter_client_dir }}/aiperf_artifacts.tar.gz"
+        dest: "{{ iter_local_dir }}/aiperf_artifacts.tar.gz"
+        flat: true
+
+    - name: Wait for PCIe stress Jobs to finish and flush their outputs
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: Job
+        name: "pcie-stress-{{ item }}"
+        namespace: "{{ k8s_namespace }}"
+      register: completed_pcie_job
+      until: >-
+        completed_pcie_job.resources | length == 1
+        and (completed_pcie_job.resources[0].status.succeeded | default(0) | int) >= 1
+      retries: 360
+      delay: 10
+      failed_when: >-
+        completed_pcie_job.resources | length == 1
+        and (
+          completed_pcie_job.resources[0].status.conditions | default([])
+          | selectattr('type', 'equalto', 'Failed')
+          | selectattr('status', 'equalto', 'True')
+          | list | length
+        ) > 0
+      loop: "{{ pcie_worker_numbers }}"
+      loop_control:
+        label: "worker {{ item }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Delete completed PCIe stress Jobs
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: "pcie-stress-{{ item }}"
+        namespace: "{{ k8s_namespace }}"
+        delete_options:
+          propagationPolicy: Foreground
+        wait: true
+        wait_timeout: 120
+      loop: "{{ pcie_worker_numbers }}"
+      loop_control:
+        label: "worker {{ item }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Stop the SILP controller before collecting its scheduler log
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        name: "{{ controller_name }}"
+        namespace: "{{ k8s_namespace }}"
+        wait: true
+        wait_timeout: 120
+      delegate_to: "{{ server_host }}"
+
+    - name: Verify the scheduler metrics file exists
+      ansible.builtin.stat:
+        path: "{{ server_results_dir }}/scheduler.csv"
+      register: scheduler_metrics_stat
+      failed_when: not scheduler_metrics_stat.stat.exists
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Verify every PCIe stress worker wrote its result file
+      ansible.builtin.stat:
+        path: "{{ server_results_dir }}/pcie_worker_{{ item }}.csv"
+      register: pcie_result_stat
+      failed_when: not pcie_result_stat.stat.exists
+      loop: "{{ pcie_worker_numbers }}"
+      loop_control:
+        label: "worker {{ item }}"
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Archive scheduler and PCIe stress metrics on the server
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -czf
+          - "{{ server_results_dir }}.tar.gz"
+          - -C
+          - "{{ server_results_dir }}"
+          - .
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Fetch scheduler and PCIe stress metrics
+      ansible.builtin.fetch:
+        src: "{{ server_results_dir }}.tar.gz"
+        dest: "{{ iter_local_dir }}/server_metrics.tar.gz"
+        flat: true
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Collect Prometheus metrics for the benchmark window
+      ansible.builtin.include_tasks: collect_metrics.yml
+
+    - name: Remove this iteration's server results after successful collection
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ server_results_dir }}"
+        - "{{ server_results_dir }}.tar.gz"
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove this iteration's server Prometheus files after collection
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ iter_metrics_dir }}"
+        - "{{ iter_metrics_dir }}.tar.gz"
+      become: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove the client iteration directory after collection
+      ansible.builtin.file:
+        path: "{{ iter_client_dir }}"
+        state: absent
+
+  rescue:
+    - name: Ensure the local iteration directory exists for failure details
+      ansible.builtin.file:
+        path: "{{ iter_local_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: Record the failed iteration
+      ansible.builtin.copy:
+        dest: "{{ iter_local_dir }}/FAILED.txt"
+        mode: "0644"
+        content: |
+          model: {{ model_config.model_id }}
+          vllm bandwidth (GB/s): {{ bw }}
+          PCIe stress worker count: {{ num_pcie_stress_workers }}
+          PCIe stress bandwidth (GB/s): {{ bw_pcie_stress }}
+          task: {{ ansible_failed_task.name | default('unknown') }}
+          message: {{ ansible_failed_result.msg | default('see Ansible output') }}
+      delegate_to: localhost
+
+    - name: Stop the sweep on iteration failure
+      ansible.builtin.fail:
+        msg: >-
+          {{ model_config.model_id }} / {{ setting_name }} failed at
+          "{{ ansible_failed_task.name | default('unknown') }}".
+          Partial results, if collected, remain in {{ iter_local_dir }}.
+
+  always:
+    - name: Remove PCIe stress Jobs for this iteration
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: "pcie-stress-{{ item }}"
+        namespace: "{{ k8s_namespace }}"
+        delete_options:
+          propagationPolicy: Foreground
+        wait: true
+        wait_timeout: 120
+      loop: "{{ pcie_worker_numbers }}"
+      loop_control:
+        label: "worker {{ item }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove the vLLM Job
+      kubernetes.core.k8s:
+        state: absent
+        api_version: batch/v1
+        kind: Job
+        name: "{{ vllm_job_name }}"
+        namespace: "{{ k8s_namespace }}"
+        delete_options:
+          propagationPolicy: Foreground
+        wait: true
+        wait_timeout: 300
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove the vLLM Service and Ingress
+      kubernetes.core.k8s:
+        state: absent
+        api_version: "{{ item.api_version }}"
+        kind: "{{ item.kind }}"
+        name: "{{ item.name }}"
+        namespace: "{{ k8s_namespace }}"
+      loop:
+        - { api_version: v1, kind: Service, name: "{{ vllm_service_name }}" }
+        - { api_version: networking.k8s.io/v1, kind: Ingress, name: "{{ vllm_ingress_name }}" }
+      loop_control:
+        label: "{{ item.kind }}/{{ item.name }}"
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove the controller Pod
+      kubernetes.core.k8s:
+        state: absent
+        api_version: v1
+        kind: Pod
+        name: "{{ controller_name }}"
+        namespace: "{{ k8s_namespace }}"
+        wait: true
+        wait_timeout: 120
+      delegate_to: "{{ server_host }}"
+
+    - name: Remove rate-control files owned by this iteration
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: >-
+        {{
+          controlled_worker_ids | map('regex_replace', '^(.*)$', rate_control_dir ~ '/rate-control-ops-\\1') | list
+          + [
+              rate_control_dir ~ '/' ~ ready_file_name,
+              rate_control_dir ~ '/' ~ go_file_name,
+              rate_control_dir ~ '/' ~ bw_alloc_file_name
+            ]
+        }}
+      become: true
+      delegate_to: "{{ server_host }}"

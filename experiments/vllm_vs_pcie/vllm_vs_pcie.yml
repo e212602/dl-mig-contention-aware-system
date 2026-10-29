@@ -1,0 +1,166 @@
+---
+- name: Prepare the vLLM versus PCIe experiment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vllm_vs_pcie_vars.yml
+  vars:
+    output_base_dir: "{{ playbook_dir }}/results"
+    server_host: "{{ lookup('env', 'SERVER_ID') }}"
+    client_host: "{{ lookup('env', 'CLIENT_ID') }}"
+    server_goarch: amd64
+  tasks:
+    - name: Validate experiment inputs
+      ansible.builtin.assert:
+        that:
+          - server_host | length > 0
+          - client_host | length > 0
+          - vllm_servers_list | length == 8
+          - (vllm_servers_list | map(attribute='model_id') | unique | list | length) == (vllm_servers_list | length)
+          - (vllm_servers_list | map(attribute='slug') | unique | list | length) == (vllm_servers_list | length)
+          - bw_values | length > 0
+          - num_pcie_stress_workers_values | length > 0
+          - bw_pcie_stress_values | length > 0
+          - (bw_values | map('int') | select('gt', 0) | list | length) == (bw_values | length)
+          - (bw_pcie_stress_values | map('int') | select('gt', 0) | list | length) == (bw_pcie_stress_values | length)
+          - (num_pcie_stress_workers_values | map('int') | select('gt', 0) | list | length) == (num_pcie_stress_workers_values | length)
+          - (num_pcie_stress_workers_values | map('int') | max) <= 3
+          - request_rate | int > 0
+          - request_count | int > 0
+        fail_msg: >-
+          Export SERVER_ID and CLIENT_ID, and provide eight unique model
+          definitions with positive bandwidth, worker-count, and benchmark
+          settings. This experiment supports up to three stress workers.
+
+    - name: Verify that every referenced model manifest exists
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/../../{{ item.source_manifest }}"
+      loop: "{{ vllm_servers_list }}"
+      loop_control:
+        label: "{{ item.source_manifest }}"
+      register: source_manifest_stat
+      failed_when: not source_manifest_stat.stat.exists
+
+    - name: Capture the run timestamp
+      ansible.builtin.set_fact:
+        timestamp: "{{ lookup('pipe', 'date +%Y%m%dT%H%M%S%N') }}"
+
+    - name: Set the run identity and independent worker-ID range
+      ansible.builtin.set_fact:
+        run_id: "{{ experiment_name }}_{{ timestamp }}"
+        run_dir: "{{ output_base_dir }}/{{ experiment_name }}_{{ timestamp }}"
+        worker_id_base: "{{ (timestamp[-5:] | int) + 100000 }}"
+        controller_pod_name: "controller-vs-pcie-{{ timestamp | lower }}"
+
+    - name: Create local output and binary directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ run_dir }}"
+
+    - name: Build the Prometheus scrapper for the server
+      ansible.builtin.command:
+        argv:
+          - go
+          - build
+          - -o
+          - "{{ run_dir }}/scrapper"
+          - "{{ playbook_dir }}/../../utils/collect_metrics/scrapper.go"
+      environment:
+        GOOS: linux
+        GOARCH: "{{ server_goarch }}"
+        CGO_ENABLED: "0"
+      changed_when: false
+
+    - name: Capture the repository revision
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ playbook_dir }}/../.."
+          - rev-parse
+          - HEAD
+      register: git_commit
+      changed_when: false
+
+    - name: Save run metadata
+      ansible.builtin.copy:
+        dest: "{{ run_dir }}/run_metadata.json"
+        mode: "0644"
+        content: "{{ run_metadata | to_nice_json }}"
+      vars:
+        run_metadata:
+          experiment_name: "{{ experiment_name }}"
+          run_id: "{{ run_id }}"
+          timestamp: "{{ timestamp }}"
+          git_commit: "{{ git_commit.stdout }}"
+          models: "{{ vllm_servers_list | map(attribute='model_id') | list }}"
+          bw_values: "{{ bw_values }}"
+          num_pcie_stress_workers_values: "{{ num_pcie_stress_workers_values }}"
+          bw_pcie_stress_values: "{{ bw_pcie_stress_values }}"
+          request_rate: "{{ request_rate }}"
+          request_count: "{{ request_count }}"
+          scheduler_policy: SILP
+          worker_id_base: "{{ worker_id_base }}"
+
+- name: Run the vLLM versus PCIe sweep
+  hosts: "{{ lookup('env', 'CLIENT_ID') }}"
+  gather_facts: false
+  vars_files:
+    - vllm_vs_pcie_vars.yml
+  vars:
+    server_host: "{{ lookup('env', 'SERVER_ID') }}"
+    run_id: "{{ hostvars['localhost']['run_id'] }}"
+    local_run_dir: "{{ hostvars['localhost']['run_dir'] }}"
+    worker_id_base: "{{ hostvars['localhost']['worker_id_base'] | int }}"
+    controller_pod_name: "{{ hostvars['localhost']['controller_pod_name'] }}"
+    client_run_dir: "/tmp/{{ hostvars['localhost']['run_id'] }}"
+    aiperf_bin: "{{ ansible_python_interpreter | dirname }}/aiperf"
+    vllm_template_file: "{{ playbook_dir }}/manifests/vllm_server.yaml.j2"
+    controller_template_file: "{{ playbook_dir }}/manifests/controller.yaml.j2"
+    pcie_stress_template_file: "{{ playbook_dir }}/manifests/pcie_stress_job.yaml.j2"
+    results_root: "{{ server_results_root }}"
+  tasks:
+    - name: Validate client prerequisites
+      ansible.builtin.assert:
+        that:
+          - ansible_python_interpreter is defined
+        fail_msg: "Set ansible_python_interpreter for the client inventory host."
+
+    - name: Check that aiperf is installed on the client
+      ansible.builtin.stat:
+        path: "{{ aiperf_bin }}"
+      register: aiperf_stat
+      failed_when: not aiperf_stat.stat.exists
+
+    - name: Create the client temporary directory
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy the aiperf time-window helper to the client
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/utils/get_time_boundaries.py"
+        dest: "{{ client_run_dir }}/get_time_boundaries.py"
+        mode: "0755"
+
+    - name: Execute each vLLM, bandwidth, stress-worker-count, and stress-bandwidth combination
+      ansible.builtin.include_tasks: run_iteration.yml
+      loop: "{{ vllm_servers_list | product(bw_values, num_pcie_stress_workers_values, bw_pcie_stress_values) | list }}"
+      loop_control:
+        loop_var: run
+        label: "{{ run[0].model_id }} / vLLM={{ run[1] }} GB/s / stress workers={{ run[2] }} / stress={{ run[3] }} GB/s"
+      vars:
+        model_config: "{{ run[0] }}"
+        bw: "{{ run[1] | int }}"
+        num_pcie_stress_workers: "{{ run[2] | int }}"
+        bw_pcie_stress: "{{ run[3] | int }}"
+
+    - name: Remove the client temporary directory
+      ansible.builtin.file:
+        path: "{{ client_run_dir }}"
+        state: absent

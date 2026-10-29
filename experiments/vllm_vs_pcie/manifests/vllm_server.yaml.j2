@@ -1,0 +1,148 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vllm-server-{{ model_config.slug }}-{{ vllm_worker_id }}
+  labels:
+    app.kubernetes.io/name: vllm-server-{{ model_config.slug }}-{{ vllm_worker_id }}
+    app.kubernetes.io/part-of: vllm-vs-pcie
+    experiment-run: {{ run_id }}
+spec:
+  parallelism: 1
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: vllm-vs-pcie
+        experiment-run: {{ run_id }}
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-controller
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until [ -f /tmp/rate-control/{{ ready_file_name }} ]; do sleep 1; done
+          volumeMounts:
+            - mountPath: /tmp/rate-control
+              name: rate-control
+      containers:
+        - name: vllm-server
+          image: {{ vllm_image }}
+          imagePullPolicy: {{ vllm_image_pull_policy }}
+          args: {{ model_config.args | to_json }}
+          env:
+            - name: MODEL_NAME
+              value: {{ model_config.model_id | to_json }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token-secret
+                  key: HF_TOKEN
+            - name: HF_HOME
+              value: "/root/.cache/huggingface/"
+            - name: LD_PRELOAD
+              value: "/mnt/libvgpu.so"
+            - name: SHARED_REGION_CACHE_ENV
+              value: "/tmp/rate-control/rate-control-ops-{{ vllm_worker_id }}"
+            - name: LIBCUDA_LOG_LEVEL
+              value: "2"
+{% for env_var in model_config.extra_env %}
+            - name: {{ env_var.name }}
+              value: {{ env_var.value | to_json }}
+{% endfor %}
+          resources:
+            requests:
+              cpu: "{{ model_config.cpu }}"
+              memory: {{ model_config.memory }}
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "{{ model_config.cpu }}"
+              memory: {{ model_config.memory }}
+              nvidia.com/gpu: 1
+          stdin: true
+          tty: true
+          volumeMounts:
+            - mountPath: /root/.cache/huggingface
+              name: hf-cache
+            - mountPath: /dev/shm
+              name: dshm
+            - mountPath: /mnt
+              name: vgpu
+              readOnly: true
+            - mountPath: /tmp/rate-control
+              name: rate-control
+              readOnly: false
+          ports:
+            - containerPort: 8000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 90
+      volumes:
+        - name: hf-cache
+          hostPath:
+            path: {{ hf_cache_host_path }}
+            type: Directory
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+        - name: vgpu
+          hostPath:
+            path: {{ vgpu_library_host_path }}
+            type: Directory
+        - name: rate-control
+          hostPath:
+            path: {{ rate_control_dir }}
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service-{{ model_config.slug }}-{{ vllm_worker_id }}
+  labels:
+    app.kubernetes.io/part-of: vllm-vs-pcie
+    experiment-run: {{ run_id }}
+spec:
+  selector:
+    job-name: vllm-server-{{ model_config.slug }}-{{ vllm_worker_id }}
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vllm-ingress-{{ model_config.slug }}-{{ vllm_worker_id }}
+  labels:
+    app.kubernetes.io/part-of: vllm-vs-pcie
+    experiment-run: {{ run_id }}
+  annotations:
+    haproxy-ingress.github.io/ssl-redirect: "false"
+    haproxy-ingress.github.io/timeout-connect: "15s"
+    haproxy-ingress.github.io/timeout-server: "1000s"
+    haproxy-ingress.github.io/timeout-client: "1000s"
+    haproxy-ingress.github.io/rewrite-target: /
+    haproxy-ingress.github.io/response-buffering: "false"
+    haproxy-ingress.github.io/timeout-queue: "1000s"
+spec:
+  ingressClassName: haproxy
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: {{ model_route_path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: vllm-service-{{ model_config.slug }}
+                port:
+                  number: 8000

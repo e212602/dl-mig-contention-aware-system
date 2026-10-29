@@ -1,0 +1,122 @@
+---
+- name: Reset the port-forward process result for this iteration
+  ansible.builtin.set_fact:
+    prometheus_port_forward: {}
+
+- name: Compute the aiperf request time window
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_python_interpreter }}"
+      - "{{ client_run_dir }}/get_time_boundaries.py"
+      - --file
+      - "{{ aiperf_raw_file }}"
+      - --pad-seconds
+      - "{{ prometheus_pad_seconds | string }}"
+  register: time_window
+  changed_when: false
+
+- name: Save the aiperf time window
+  ansible.builtin.copy:
+    dest: "{{ iter_local_dir }}/time_window.json"
+    mode: "0644"
+    content: "{{ time_window.stdout | from_json | to_nice_json }}"
+  delegate_to: localhost
+
+- name: Wait for Prometheus to ingest the final samples
+  ansible.builtin.pause:
+    seconds: "{{ prometheus_settle_seconds }}"
+
+- name: Create the remote Prometheus metrics directory
+  ansible.builtin.file:
+    path: "{{ iter_metrics_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: "{{ server_host }}"
+
+- name: Copy the Prometheus scrapper to the server
+  ansible.builtin.copy:
+    src: "{{ local_run_dir }}/scrapper"
+    dest: "{{ iter_metrics_dir }}/scrapper"
+    mode: "0755"
+  delegate_to: "{{ server_host }}"
+
+- name: Open Prometheus port-forward and collect the request-window metrics
+  block:
+    - name: Start a server-local Prometheus port-forward
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl port-forward \
+          --namespace {{ prometheus_namespace }} \
+          svc/{{ prometheus_service }} \
+          --address 127.0.0.1 \
+          {{ prometheus_local_port }}:{{ prometheus_service_port }} \
+          > "{{ iter_metrics_dir }}/port-forward.log" 2>&1 &
+        echo $!
+      args:
+        executable: /bin/bash
+      register: prometheus_port_forward
+      changed_when: true
+      delegate_to: "{{ server_host }}"
+
+    - name: Wait for Prometheus through the port-forward
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ prometheus_local_port }}/-/ready"
+        status_code: 200
+        timeout: 3
+      register: prometheus_ready
+      until: prometheus_ready.status is defined and prometheus_ready.status == 200
+      retries: 15
+      delay: 2
+      delegate_to: "{{ server_host }}"
+
+    - name: Run the Prometheus scrapper
+      ansible.builtin.shell: |
+        set -euo pipefail
+        ./scrapper \
+          --addr "http://127.0.0.1:{{ prometheus_local_port }}" \
+          --start "{{ (time_window.stdout | from_json).start }}" \
+          --end "{{ (time_window.stdout | from_json).end }}" \
+          --step "{{ prometheus_step }}" \
+          --csv-file "{{ setting_name }}.csv" \
+          > "{{ setting_name }}.log" 2>&1
+        if grep -q 'ERROR:' "{{ setting_name }}.log"; then
+          cat "{{ setting_name }}.log" >&2
+          exit 1
+        fi
+      args:
+        executable: /bin/bash
+        chdir: "{{ iter_metrics_dir }}"
+      register: prometheus_scrape
+      changed_when: true
+      delegate_to: "{{ server_host }}"
+  always:
+    - name: Stop the Prometheus port-forward
+      ansible.builtin.command:
+        argv:
+          - kill
+          - "{{ prometheus_port_forward.stdout | trim }}"
+      changed_when: false
+      when:
+        - prometheus_port_forward is defined
+        - prometheus_port_forward.stdout | default('', true) | trim | length > 0
+      delegate_to: "{{ server_host }}"
+
+- name: Archive and fetch Prometheus metrics
+  ansible.builtin.command:
+    argv:
+      - tar
+      - -czf
+      - "{{ iter_metrics_dir }}.tar.gz"
+      - -C
+      - "{{ iter_metrics_dir }}"
+      - --exclude=scrapper
+      - .
+  changed_when: true
+  delegate_to: "{{ server_host }}"
+
+- name: Fetch Prometheus metrics
+  ansible.builtin.fetch:
+    src: "{{ iter_metrics_dir }}.tar.gz"
+    dest: "{{ iter_local_dir }}/prometheus_metrics.tar.gz"
+    flat: true
+  delegate_to: "{{ server_host }}"

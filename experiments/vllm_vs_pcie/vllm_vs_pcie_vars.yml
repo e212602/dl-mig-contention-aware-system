@@ -1,0 +1,209 @@
+experiment_name: vllm_vs_pcie
+
+vllm_servers_list:
+  - model_id: "bigscience/bloom-1b7"
+    slug: "bloom-1b7"
+    source_manifest: "workload/vllm/model_Server/openai-vllm-bloom-1b7.yaml"
+    url_path: "/"
+    cpu: "10"
+    memory: "8Gi"
+    args:
+      - "--model"
+      - "$(MODEL_NAME)"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--max-model-len"
+      - "4096"
+      - "--async-scheduling"
+      - "--limit-mm-per-prompt.video"
+      - "0"
+      - "--no-enable-prefix-caching"
+      - "--gpu_memory_utilization"
+      - "0.9"
+    extra_env: []
+  - model_id: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+    slug: "deepseek-1o5b"
+    source_manifest: "workload/vllm/model_Server/openai-vllm-deepseek-1.5B.yaml"
+    url_path: "/deepseek"
+    cpu: "10"
+    memory: "16Gi"
+    args:
+      - "--model"
+      - "$(MODEL_NAME)"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--max-model-len"
+      - "32768"
+      - "--async-scheduling"
+      - "--limit-mm-per-prompt.video"
+      - "0"
+      - "--no-enable-prefix-caching"
+      - "--cpu-offload-gb"
+      - "1"
+      - "--gpu_memory_utilization"
+      - "0.9"
+    extra_env: []
+  - model_id: "RedHatAI/gemma-2-2b-it-quantized.w4a16"
+    slug: "gemma-4-e2b"
+    source_manifest: "workload/vllm/model_Server/openai-vllm-gemma-4-E2B.yaml"
+    url_path: "/gemma"
+    cpu: "5"
+    memory: "16Gi"
+    args:
+      - "--model"
+      - "$(MODEL_NAME)"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--max-model-len"
+      - "1024"
+      - "--async-scheduling"
+      - "--limit-mm-per-prompt.video"
+      - "0"
+      - "--no-enable-prefix-caching"
+      - "--cpu-offload-gb"
+      - "0.1"
+      - "--gpu_memory_utilization"
+      - "0.9"
+    extra_env: []
+  - model_id: "microsoft/Phi-3.5-mini-instruct"
+    slug: "microsoft-3o5b"
+    source_manifest: "workload/vllm/model_Server/openai-vllm-microsoft-3.5B.yaml"
+    url_path: "/microsoft"
+    cpu: "10"
+    memory: "16Gi"
+    args:
+      - "--model"
+      - "$(MODEL_NAME)"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--max-model-len"
+      - "8192"
+      - "--async-scheduling"
+      - "--limit-mm-per-prompt.video"
+      - "0"
+      - "--no-enable-prefix-caching"
+      - "--cpu-offload-gb"
+      - "8"
+      - "--gpu_memory_utilization"
+      - "0.9"
+      - "--enforce-eager"
+    extra_env:
+      - name: VLLM_USE_V2_MODEL_RUNNER
+        value: "0"
+  - model_id: "mistralai/Ministral-3-3B-Instruct-2512"
+    slug: "mistral-3b"
+    source_manifest: "workload/vllm/model_Server/openai-vllm-mistral-3B.yaml"
+    url_path: "/mistral"
+    cpu: "5"
+    memory: "16Gi"
+    args:
+      - "--model"
+      - "$(MODEL_NAME)"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--max-model-len"
+      - "1024"
+      - "--async-scheduling"
+      - "--limit-mm-per-prompt.video"
+      - "0"
+      - "--no-enable-prefix-caching"
+      - "--cpu-offload-gb"
+      - "0.2"
+      - "--gpu_memory_utilization"
+      - "0.95"
+    extra_env: []
+  - model_id: "Qwen/Qwen2.5-1.5B-Instruct"
+    slug: "qwen25-1o5b"
+    source_manifest: "workload/vllm/model_Server/openai-vllm-qwen2.5-1.5B.yaml"
+    url_path: "/qwen3"
+    cpu: "5"
+    memory: "16Gi"
+    args:
+      - "--model"
+      - "$(MODEL_NAME)"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--max-model-len"
+      - "1024"
+      - "--async-scheduling"
+      - "--limit-mm-per-prompt.video"
+      - "0"
+      - "--no-enable-prefix-caching"
+      - "--cpu-offload-gb"
+      - "0.2"
+      - "--gpu_memory_utilization"
+      - "0.9"
+    extra_env: []
+  - model_id: "Qwen/Qwen2.5-3B-Instruct-GPTQ-Int8"
+    slug: "qwen25-3b"
+    source_manifest: "workload/vllm/model_Server/openai-vllm-qwen2.5-3B.yaml"
+    url_path: "/qwen25"
+    cpu: "5"
+    memory: "16Gi"
+    args:
+      - "--model"
+      - "$(MODEL_NAME)"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--max-model-len"
+      - "1024"
+      - "--async-scheduling"
+      - "--limit-mm-per-prompt.video"
+      - "0"
+      - "--no-enable-prefix-caching"
+      - "--cpu-offload-gb"
+      - "0.2"
+      - "--gpu_memory_utilization"
+      - "0.85"
+    extra_env: []
+  - model_id: "RedHatAI/SmolLM-1.7B-Instruct-quantized.w8a16"
+    slug: "smollm-1o7b"
+    source_manifest: "workload/vllm/model_Server/openai-vllm-smollm-1.7B.yaml"
+    url_path: "/smollm"
+    cpu: "5"
+    memory: "16Gi"
+    args:
+      - "--model"
+      - "$(MODEL_NAME)"
+      - "--tensor-parallel-size"
+      - "1"
+      - "--max-model-len"
+      - "1024"
+      - "--async-scheduling"
+      - "--limit-mm-per-prompt.video"
+      - "0"
+      - "--no-enable-prefix-caching"
+      - "--cpu-offload-gb"
+      - "0.2"
+      - "--gpu_memory_utilization"
+      - "0.9"
+    extra_env: []
+
+bw_values: [1, 2, 4, 8, 16]
+num_pcie_stress_workers_values: [1, 2, 3]
+bw_pcie_stress_values: [1, 2, 4, 8, 16]
+
+request_rate: 10
+request_count: 200
+warmup_requests: 5
+aiperf_warmup_request_count: 20
+benchmark_timeout_seconds: 7200
+server_ready_retries: 120
+
+k8s_namespace: default
+controller_image: "e8113/controller:latest"
+pcie_stress_image: "e8113/pcie_test"
+vllm_image: "docker.io/vllm/vllm-openai:latest"
+vllm_image_pull_policy: Never
+rate_control_dir: "/home/ubuntu/work/projects/dl-mig-contention-aware-system/rate-control"
+vgpu_library_host_path: "/home/ubuntu/work/projects/dl-mig-contention-aware-system/HAMi-core/build"
+hf_cache_host_path: "/home/ubuntu/.cache/huggingface"
+server_results_root: "/tmp/results"
+server_metrics_root: "/tmp/results/vllm_vs_pcie_metrics"
+prometheus_namespace: monitoring
+prometheus_service: prometheus-operated
+prometheus_service_port: 9090
+prometheus_local_port: 19090
+prometheus_step: 5s
+prometheus_pad_seconds: 5
+prometheus_settle_seconds: 30

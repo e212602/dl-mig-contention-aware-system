@@ -1,0 +1,74 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pcie-stress-{{ worker_number }}
+  labels:
+    app.kubernetes.io/name: pcie-stress
+    app.kubernetes.io/part-of: vllm-vs-pcie
+    experiment-run: {{ run_id }}
+    worker-number: "{{ worker_number }}"
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pcie-stress
+        app.kubernetes.io/part-of: vllm-vs-pcie
+        experiment-run: {{ run_id }}
+        worker-number: "{{ worker_number }}"
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-controller
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until [ -f /tmp/rate-control/{{ ready_file_name }} ]; do sleep 1; done
+          volumeMounts:
+            - mountPath: /tmp/rate-control
+              name: rate-control
+      containers:
+        - name: pcie-stress
+          image: {{ pcie_stress_image }}
+          imagePullPolicy: Never
+          env:
+            - name: LD_PRELOAD
+              value: "/mnt/libvgpu.so"
+            - name: SHARED_REGION_CACHE_ENV
+              value: "/tmp/rate-control/rate-control-ops-{{ worker_number }}"
+            - name: LIBCUDA_LOG_LEVEL
+              value: "0"
+            - name: PCIE_RESULTS_CSV
+              value: "{{ server_results_dir }}/pcie_worker_{{ worker_number }}.csv"
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - mountPath: /mnt
+              name: vgpu
+              readOnly: true
+            - mountPath: /tmp/rate-control
+              name: rate-control
+              readOnly: false
+            - mountPath: /tmp/results
+              name: results
+              readOnly: false
+      volumes:
+        - name: vgpu
+          hostPath:
+            path: {{ vgpu_library_host_path }}
+            type: Directory
+        - name: rate-control
+          hostPath:
+            path: {{ rate_control_dir }}
+            type: DirectoryOrCreate
+        - name: results
+          hostPath:
+            path: {{ server_results_root }}
+            type: DirectoryOrCreate

@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ controller_pod_name }}
+  labels:
+    app.kubernetes.io/part-of: vllm-vs-pcie
+    experiment-run: {{ run_id }}
+spec:
+  restartPolicy: Never
+  containers:
+    - name: controller
+      image: {{ controller_image }}
+      imagePullPolicy: Never
+      args:
+        - "--policy"
+        - "SILP"
+      env:
+        - name: GB_RATE
+          value: "{{ bw }}"
+        - name: WORKER_IDS
+          value: "{{ worker_ids | join(',') }}"
+        - name: READY_FILE
+          value: "/tmp/rate-control/{{ ready_file_name }}"
+        - name: GO_FILE
+          value: "/tmp/rate-control/{{ go_file_name }}"
+        - name: BURST_TICKS
+          value: "1"
+        - name: SCHEDULER_LOG
+          value: "{{ server_results_dir }}/scheduler.csv"
+        - name: BW_ALLOC_FILE
+          value: "/tmp/rate-control/{{ bw_alloc_file_name }}"
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      volumeMounts:
+        - mountPath: /tmp/rate-control
+          name: rate-control
+          readOnly: false
+        - mountPath: /tmp/results
+          name: results
+          readOnly: false
+  volumes:
+    - name: rate-control
+      hostPath:
+        path: {{ rate_control_dir }}
+        type: DirectoryOrCreate
+    - name: results
+      hostPath:
+        path: {{ server_results_root }}
+        type: DirectoryOrCreate
